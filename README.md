@@ -84,7 +84,7 @@ You can directly use our converted datasets. If you need the original datasets, 
 
 Converted dataset addresses:
 - OneDrive: https://1drv.ms/f/c/1a7361d22c554503/EpDSys0bWbxDhNGDYL_O0hUBa2OnhNRvNo2Gey2id7QMQA?e=7Ui0f5
-- BaiduYun: 
+- BaiduYun: https://pan.baidu.com/s/1NEGQcYoMtd57oqog09pB6w?pwd=5v8h 提取码: 5v8h 
 
 Original dataset addresses:
 
@@ -248,7 +248,7 @@ Ubuntu 20.04 应该也可行，未测试。
 
 转换后的数据集地址：
 - OneDrive: https://1drv.ms/f/c/1a7361d22c554503/EpDSys0bWbxDhNGDYL_O0hUBa2OnhNRvNo2Gey2id7QMQA?e=7Ui0f5
-- BaiduYun:
+- BaiduYun: https://pan.baidu.com/s/1NEGQcYoMtd57oqog09pB6w?pwd=5v8h 提取码: 5v8h 
 
 原始数据集地址：
 
