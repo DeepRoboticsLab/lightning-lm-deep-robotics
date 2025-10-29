@@ -192,7 +192,7 @@ Lightning-LM特性：
 
 - VBR上的定位
 
-![](./doc/campus_vbr.png)
+![](./doc/lm_loc_vbr_campus.gif)
 
 - VBR上的地图
    - 点云
