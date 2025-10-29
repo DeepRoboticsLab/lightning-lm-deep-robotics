@@ -24,15 +24,11 @@ Features of Lightning-LM:
 
 - Mapping on the VBR campus dataset:
 
-<video controls width="100%">
-  <source src="doc/slam_vbr.mp4" type="video/mp4">
-</video>
+![](./doc/slam_vbr.gif)
 
 - Localization on VBR
 
-<video controls width="100%">
-  <source src="doc/lm_loc_vbr_campus.mp4" type="video/mp4">
-</video>
+![](./doc/lm_loc_vbr_campus.gif)
 
 - Map on VBR
    - Point Cloud
@@ -44,9 +40,7 @@ Features of Lightning-LM:
 
 - Localization on the NCLT dataset
 
-<video controls width="100%">
-  <source src="doc/lm_loc1_nclt.mp4" type="video/mp4">
-</video>
+![](./doc/lm_loc1_nclt.gif)
 
 ## Build
 
@@ -194,15 +188,11 @@ Lightning-LM特性：
 
 - VBR campus数据集上的建图：
 
-<video controls width="100%">
-  <source src="doc/slam_vbr.mp4" type="video/mp4">
-</video>
+![](./doc/slam_vbr.gif)
 
 - VBR上的定位
 
-<video controls width="100%">
-  <source src="doc/lm_loc_vbr_campus.mp4" type="video/mp4"> 
-</video>
+![](./doc/campus_vbr.png)
 
 - VBR上的地图
    - 点云
@@ -214,10 +204,7 @@ Lightning-LM特性：
 
 - NCLT 数据集上的定位
 
-<video controls width="100%">
-  <source src="doc/lm_loc1_nclt.mp4" type="video/mp4"> 
-</video>
-
+![](./doc/lm_loc1_nclt.gif)
 
 ## 编译
 
