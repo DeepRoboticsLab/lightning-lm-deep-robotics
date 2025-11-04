@@ -65,7 +65,7 @@ On Ubuntu 22.04, run: ```bash ./scripts/install_dep.sh```.
 
 ### Build
 
-Build this package with ```colcon build```.
+Build this package with ```colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release```.
 
 Then ```source install/setup.bash``` to use it.
 
@@ -229,7 +229,7 @@ Ubuntu 20.04 应该也可行，未测试。
 
 ### 编译
 
-```colcon build```本包即可。
+```colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release```本包即可。
 
 然后```source install/setup.bash```即可使用。
 
