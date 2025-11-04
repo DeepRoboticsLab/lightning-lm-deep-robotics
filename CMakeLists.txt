@@ -7,6 +7,9 @@ if (NOT CMAKE_CXX_STANDARD)
     set(CMAKE_CXX_STANDARD 17)
 endif ()
 
+# set to release by default
+set(CMAKE_BUILD_TYPE Release)
+
 # -------------------------------------------------------------
 # 导入第三方库，同时做一些全局编译选项配置
 add_definitions("-DPCL_NO_PRECOMPILE")
