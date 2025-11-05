@@ -98,7 +98,7 @@ Original dataset addresses:
    - Start the mapping program:
      ```ros2 run lightning run_slam_online --config ./config/default_nclt.yaml```
    - Play the data bag
-   - Save the map ```ros2 service call /lightning/save_map lightning/srv/SaveMap "{map_id: new_map}"```
+   - Save the map ```ros2 service call /lightning/save_map /lightning/srv/SaveMap "{map_id: new_map}"```
 2. Offline mapping (traverse data, faster)
    - ```ros2 run lightning run_slam_offline --config ./config/default_nclt.yaml --input_bag [bag_file]```
    - It will automatically save to the data/new_map directory after finishing.
@@ -262,7 +262,7 @@ Ubuntu 20.04 应该也可行，未测试。
     - 启动建图程序:
       ```ros2 run lightning run_slam_online --config ./config/default_nclt.yaml```
     - 播放数据包
-    - 保存地图 ```ros2 service call /lightning/save_map lightning/srv/SaveMap "{map_id: new_map}"```
+    - 保存地图 ```ros2 service call /lightning/save_map /lightning/srv/SaveMap "{map_id: new_map}"```
 2. 离线建图（遍历跑数据，更快一些）
     - ```ros2 run lightning run_slam_offline --config ./config/default_nclt.yaml --input_bag 数据包```
     - 结束后会自动保存至data/new_map目录下
