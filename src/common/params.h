@@ -19,7 +19,8 @@ enum class SensorType {
     VELODYNE,  // 威力登
     OUSTER,    // ouster
     LIVOX,     // 览沃
-    MID360
+    MID360,
+    RoboSense
 };
 
 enum class FrontEndType {

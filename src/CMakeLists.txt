@@ -43,7 +43,16 @@ add_library(${PROJECT_NAME}.libs SHARED
 
         wrapper/bag_io.cc
 )
-
+# 对特别重的文件使用 -O1，减少内存和编译时间
+set_source_files_properties(
+    core/g2p5/g2p5.cc
+    core/system/slam.cc
+    core/localization/lidar_loc/lidar_loc.cc
+    core/localization/pose_graph/pgo_impl.cc
+    core/localization/lidar_loc/pclomp/ndt_omp.cpp
+    core/localization/lidar_loc/pclomp/voxel_grid_covariance_omp.cpp
+    PROPERTIES COMPILE_FLAGS "-O1 -fPIC -fopenmp"
+)
 ament_target_dependencies(
         ${PROJECT_NAME}.libs
         "rclcpp"

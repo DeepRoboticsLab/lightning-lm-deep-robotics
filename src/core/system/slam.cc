@@ -66,7 +66,14 @@ bool SlamSystem::Init(const std::string& yaml_path) {
         if (options_.with_2dvisualization_) {
             g2p5_->SetMapUpdateCallback([this](g2p5::G2P5MapPtr map) {
                 cv::Mat image = map->ToCV();
-                cv::imshow("map", image);
+                // Resize image if too large  
+                if (image.rows > 800 || image.cols > 1200) {  
+                    cv::resize(image, image, cv::Size(1200, 800), 0, 0, cv::INTER_AREA);  
+                }  
+                
+                cv::imshow("map", image);  
+                cv::resizeWindow("map", 1200, 800);  // Set window size  
+                        cv::imshow("map", image);
 
                 if (options_.step_on_kf_) {
                     cv::waitKey(0);
@@ -114,8 +121,10 @@ bool SlamSystem::Init(const std::string& yaml_path) {
             });
 
         savemap_service_ = node_->create_service<SaveMapService>(
-            "lightning/save_map", [this](const SaveMapService::Request::SharedPtr& req,
-                                         SaveMapService::Response::SharedPtr res) { SaveMap(req, res); });
+            "lightning/save_map",
+            [this](const SaveMapService::Request::SharedPtr req, SaveMapService::Response::SharedPtr res) {
+                SaveMap(req, res);
+            });
 
         LOG(INFO) << "online slam node has been created.";
     }

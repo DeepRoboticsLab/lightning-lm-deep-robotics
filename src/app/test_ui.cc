@@ -8,13 +8,15 @@
 #include <pangolin/display/view.h>
 #include <pangolin/gl/gldraw.h>
 #include <pangolin/handler/handler.h>
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 
 int main(int argc, char** argv) {
     google::InitGoogleLogging(argv[0]);
     FLAGS_colorlogtostderr = true;
     FLAGS_stderrthreshold = google::INFO;
 
-    google::ParseCommandLineFlags(&argc, &argv, true);
+    gflags::ParseCommandLineFlags(&argc, &argv, true);
 
     lightning::ui::PangolinWindow ui;
     ui.Init();

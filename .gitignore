@@ -5,6 +5,7 @@
 *libs
 **data
 **/.vscode/
-
+bin
+*.zip
 **cmake-build-debug**
 **cmake-build-release**

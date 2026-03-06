@@ -172,7 +172,7 @@ void LoopClosing::ComputeForCandidate(lightning::LoopCandidate& c) {
         CloudPtr submap(new PointCloudType);
         for (int idx = -submap_idx_range; idx < submap_idx_range; idx += 4) {
             int id = idx + given_id;
-            if (id < 0 || id > all_keyframes_.size()) {
+            if (id < 0 || id >= all_keyframes_.size()) {
                 continue;
             }
 

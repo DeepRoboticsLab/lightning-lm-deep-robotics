@@ -116,6 +116,10 @@ bool Localization::Init(const std::string& yaml_path, const std::string& global_
     } else if (lidar_type == 3) {
         preprocess_->SetLidarType(LidarType::OUST64);
         LOG(INFO) << "Using OUST 64 Lidar";
+    } 
+    else if (lidar_type == 4) {
+        preprocess_->SetLidarType(LidarType::RoboSense);
+        LOG(INFO) << "Using RoboSense Lidar";
     } else {
         LOG(WARNING) << "unknown lidar_type";
     }
