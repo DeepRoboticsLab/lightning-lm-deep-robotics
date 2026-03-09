@@ -51,7 +51,8 @@ system:
   step_on_kf: false # 是否在关键帧处暂停
 
   enable_lidar_loc_skip: false
-  log_pose_opt: true # 命令行打印位置和速度
+  log_pose_opt: false # 命令行打印位置和速度
+  pub_odom: true
   enable_lidar_loc_rviz: false # 是否启用RViz点云发布
   rviz_current_scan_topic: "/current_scan_cloud"
   rviz_global_map_topic: "/global_map_cloud"

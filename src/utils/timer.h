@@ -51,6 +51,8 @@ class Timer {
 
         if (print) {
             LOG(INFO) << "func <" << func_name << "> timer: " << time_used << " ms";
+            // printf("\rtimer.h:53] func <%s> timer: %.3f ms           ", func_name.c_str(), time_used);
+            // fflush(stdout);
         }
     }
 

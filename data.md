@@ -48,6 +48,9 @@ vim src/lightning-lm/config/default_deep_robotics.yaml
 ros2 topic hz /LIDAR/POINTS
 
 ros2 run lightning run_slam_online --config ./src/lightning-lm/config/default_deep_roboticsslam.yaml
+
+ros2 interface show lightning/msg/NavState
+ros2 topic echo /lightning/nav_state
 ```
 <!-- 
 开启3D UI 会直接崩溃:

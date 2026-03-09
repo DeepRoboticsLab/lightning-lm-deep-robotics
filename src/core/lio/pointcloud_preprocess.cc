@@ -217,57 +217,36 @@ void PointCloudPreprocess::VelodyneHandler(const sensor_msgs::msg::PointCloud2::
     cloud_out_.is_dense = false;
 }
 
+
 void PointCloudPreprocess::RobosenseHandler(const sensor_msgs::msg::PointCloud2::SharedPtr &msg)
 {
     cloud_out_.clear();
     cloud_full_.clear();
 
-    // 使用与Point-LIO中相似的方式处理MID360的点云
-    pcl::PointCloud<livox_ros::LivoxPointXyzrtlt> pl_orig;
+    pcl::PointCloud<robosense_ros::Point> pl_orig;
     pcl::fromROSMsg(*msg, pl_orig);
-    int plsize = pl_orig.size();
+    int plsize = pl_orig.points.size();
     cloud_out_.reserve(plsize);
-    int j_tosee = std::rand() % plsize;
+
+    double start_time = pl_orig.points[0].timestamp ;
+
     for (int i = 0; i < plsize; i++) {
         if (i % point_filter_num_ != 0) {
             continue;
         }
-        
-        // 计算点的距离，过滤盲区点
-        double range = pl_orig.points[i].x * pl_orig.points[i].x + 
-                      pl_orig.points[i].y * pl_orig.points[i].y + 
-                      pl_orig.points[i].z * pl_orig.points[i].z;
-        
-        if (range < (blind_ * blind_)) {
-            continue;
-        }
-        
-        // 添加有效的点到输出点云
+
         PointType added_pt;
         added_pt.x = pl_orig.points[i].x;
         added_pt.y = pl_orig.points[i].y;
         added_pt.z = pl_orig.points[i].z;
         added_pt.intensity = pl_orig.points[i].intensity;
-        
-        //  2024-01-30-16-40-41.bag 旧版会出现这个
-        double timestamp_ns = pl_orig.points[i].timestamp;
-        double timestamp_sec = timestamp_ns / 1e3f; // 转换为秒
-        
-        // In ROS2, convert Time message to seconds manually
-        double header_time_sec = msg->header.stamp.sec + (msg->header.stamp.nanosec / 1e9);
-        double offset_time_sec = timestamp_sec - header_time_sec;
-        
-        // 确保时间偏移合理（通常在-1到1秒之间）
-        if (timestamp_sec>1e4) {
-            // 可能是数据格式问题，尝试其他单位转换
-            timestamp_sec = timestamp_ns / 1e9f; // 尝试毫秒转换
-            offset_time_sec = timestamp_sec - header_time_sec;
+        added_pt.time = (pl_orig.points[i].timestamp - start_time) * 1e3;  // curvature unit: ms
+
+        if (i % point_filter_num_ == 0) {
+            if (added_pt.x * added_pt.x + added_pt.y * added_pt.y + added_pt.z * added_pt.z > (blind_ * blind_)) {
+                cloud_out_.points.push_back(added_pt);
+            }
         }
-        added_pt.time  = offset_time_sec * 1000;
-        if(i==j_tosee)
-            std::cout<<"Process mid360 "<<i<< " curvature/ms " << added_pt.time<<" timestamp/ns = "<<
-            timestamp_ns<<" - "<<  timestamp_sec<<std::endl;
-        cloud_out_.points.push_back(added_pt);
     }
     cloud_out_.width = cloud_out_.size();
     cloud_out_.height = 1;

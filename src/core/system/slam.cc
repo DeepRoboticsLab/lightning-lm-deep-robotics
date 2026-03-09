@@ -34,6 +34,7 @@ bool SlamSystem::Init(const std::string& yaml_path) {
     options_.with_2dvisualization_ = yaml["system"]["with_2dui"].as<bool>();
     options_.with_rviz_visualization_ = yaml["system"]["enable_lidar_loc_rviz"] ? yaml["system"]["enable_lidar_loc_rviz"].as<bool>() : false;
     options_.pub_tf_ = yaml["system"]["pub_tf"] ? yaml["system"]["pub_tf"].as<bool>() : false;
+    options_.pub_odom_ = yaml["system"]["pub_odom"] ? yaml["system"]["pub_odom"].as<bool>() : false;
     options_.with_gridmap_ = yaml["system"]["with_g2p5"].as<bool>();
     options_.step_on_kf_ = yaml["system"]["step_on_kf"].as<bool>();
     options_.log_pose_opt_ = yaml["system"]["log_pose_opt"] ? yaml["system"]["log_pose_opt"].as<bool>() : false;
@@ -122,6 +123,11 @@ bool SlamSystem::Init(const std::string& yaml_path) {
             cloud_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>(scan_topic, 10);
             map_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>(map_topic, 1);
             path_pub_ = node_->create_publisher<nav_msgs::msg::Path>("lightning/path", 10);
+        }
+
+        if (options_.pub_odom_) {
+            odom_pub_ = node_->create_publisher<nav_msgs::msg::Odometry>("lightning/odom", 10);
+            nav_state_pub_ = node_->create_publisher<msg::NavState>("lightning/nav_state", 10);
         }
 
         if (options_.pub_tf_) {
@@ -263,8 +269,14 @@ void SlamSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr& cl
 
     if (options_.log_pose_opt_) {
         auto state = lio_->GetState();
-        LOG(INFO) << "pose: " << state.pos_.transpose();
-        LOG(INFO) << "velocity: " << state.vel_.transpose();
+        auto q = state.rot_.unit_quaternion();
+        LOG(INFO) << "pose: " << state.pos_.transpose() << "\tq: " << q.coeffs().transpose() << "\tvelocity: " << state.vel_.transpose();
+
+        // printf("\rslam.cc:266] pose: [%.3f, %.3f, %.3f], q: [%.3f, %.3f, %.3f, %.3f], vel: [%.3f, %.3f, %.3f]           ", 
+        //        state.pos_.x(), state.pos_.y(), state.pos_.z(),
+        //        q.w(), q.x(), q.y(), q.z(),
+        //        state.vel_.x(), state.vel_.y(), state.vel_.z());
+        // fflush(stdout);
     }
 
     if (options_.with_rviz_visualization_ && cloud_pub_ != nullptr) {
@@ -309,32 +321,51 @@ void SlamSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr& cl
         cloud_pub_->publish(ros_cloud);
     }
 
-    if (tf_broadcaster_ != nullptr) {
-        geometry_msgs::msg::TransformStamped tf_msg;
-        tf_msg.header.stamp = node_->now();
-        tf_msg.header.frame_id = "map";
-        tf_msg.child_frame_id = "lidar_link";
+    if (nav_state_pub_ != nullptr) {
+        auto state = lio_->GetState();
+        msg::NavState ns;
+        ns.header.stamp = node_->now();
+        ns.header.frame_id = "map";
+        ns.pose.position.x = state.pos_.x();
+        ns.pose.position.y = state.pos_.y();
+        ns.pose.position.z = state.pos_.z();
+        auto q = state.rot_.unit_quaternion();
+        ns.pose.orientation.x = q.x();
+        ns.pose.orientation.y = q.y();
+        ns.pose.orientation.z = q.z();
+        ns.pose.orientation.w = q.w();
+        ns.velocity.x = state.vel_.x();
+        ns.velocity.y = state.vel_.y();
+        ns.velocity.z = state.vel_.z();
+        ns.confidence = 1.0;
+        ns.pose_is_ok = true;
+        nav_state_pub_->publish(ns);
 
-        SE3 pose = cur_kf_->GetOptPose();
-        tf_msg.transform.translation.x = pose.translation().x();
-        tf_msg.transform.translation.y = pose.translation().y();
-        tf_msg.transform.translation.z = pose.translation().z();
-        tf_msg.transform.rotation.x = pose.unit_quaternion().x();
-        tf_msg.transform.rotation.y = pose.unit_quaternion().y();
-        tf_msg.transform.rotation.z = pose.unit_quaternion().z();
-        tf_msg.transform.rotation.w = pose.unit_quaternion().w();
+        if (tf_broadcaster_ != nullptr) {
+            geometry_msgs::msg::TransformStamped tf_msg;
+            tf_msg.header = ns.header;
+            tf_msg.child_frame_id = "lidar_link";
+            tf_msg.transform.translation.x = ns.pose.position.x;
+            tf_msg.transform.translation.y = ns.pose.position.y;
+            tf_msg.transform.translation.z = ns.pose.position.z;
+            tf_msg.transform.rotation = ns.pose.orientation;
+            tf_broadcaster_->sendTransform(tf_msg);
+        }
 
-        tf_broadcaster_->sendTransform(tf_msg);
+        if (odom_pub_ != nullptr) {
+            nav_msgs::msg::Odometry odom;
+            odom.header = ns.header;
+            odom.child_frame_id = "lidar_link";
+            odom.pose.pose = ns.pose;
+            odom.twist.twist.linear = ns.velocity;
+            odom_pub_->publish(odom);
+        }
 
         if (path_pub_ != nullptr) {
             geometry_msgs::msg::PoseStamped ps;
-            ps.header = tf_msg.header;
-            ps.pose.position.x = tf_msg.transform.translation.x;
-            ps.pose.position.y = tf_msg.transform.translation.y;
-            ps.pose.position.z = tf_msg.transform.translation.z;
-            ps.pose.orientation = tf_msg.transform.rotation;
-            path_.header.stamp = node_->now();
-            path_.header.frame_id = "map";
+            ps.header = ns.header;
+            ps.pose = ns.pose;
+            path_.header = ns.header;
             path_.poses.push_back(ps);
             path_pub_->publish(path_);
         }
@@ -366,8 +397,14 @@ void SlamSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr
 
     if (options_.log_pose_opt_) {
         auto state = lio_->GetState();
-        LOG(INFO) << "pose: " << state.pos_.transpose();
-        LOG(INFO) << "velocity: " << state.vel_.transpose();
+        auto q = state.rot_.unit_quaternion();
+        LOG(INFO) << "pose: " << state.pos_.transpose() << "\tq: " << q.coeffs().transpose() << "\tvelocity: " << state.vel_.transpose();
+
+        // printf("\rslam.cc:374] pose: [%.3f, %.3f, %.3f], q: [%.3f, %.3f, %.3f, %.3f], vel: [%.3f, %.3f, %.3f]           ", 
+        //        state.pos_.x(), state.pos_.y(), state.pos_.z(),
+        //        q.w(), q.x(), q.y(), q.z(),
+        //        state.vel_.x(), state.vel_.y(), state.vel_.z());
+        // fflush(stdout);
     }
 
     if (options_.with_rviz_visualization_ && cloud_pub_ != nullptr) {
@@ -412,32 +449,51 @@ void SlamSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr
         cloud_pub_->publish(ros_cloud);
     }
 
-    if (tf_broadcaster_ != nullptr) {
-        geometry_msgs::msg::TransformStamped tf_msg;
-        tf_msg.header.stamp = node_->now();
-        tf_msg.header.frame_id = "map";
-        tf_msg.child_frame_id = "lidar_link";
+    if (nav_state_pub_ != nullptr) {
+        auto state = lio_->GetState();
+        msg::NavState ns;
+        ns.header.stamp = node_->now();
+        ns.header.frame_id = "map";
+        ns.pose.position.x = state.pos_.x();
+        ns.pose.position.y = state.pos_.y();
+        ns.pose.position.z = state.pos_.z();
+        auto q = state.rot_.unit_quaternion();
+        ns.pose.orientation.x = q.x();
+        ns.pose.orientation.y = q.y();
+        ns.pose.orientation.z = q.z();
+        ns.pose.orientation.w = q.w();
+        ns.velocity.x = state.vel_.x();
+        ns.velocity.y = state.vel_.y();
+        ns.velocity.z = state.vel_.z();
+        ns.confidence = 1.0;
+        ns.pose_is_ok = true;
+        nav_state_pub_->publish(ns);
 
-        SE3 pose = cur_kf_->GetOptPose();
-        tf_msg.transform.translation.x = pose.translation().x();
-        tf_msg.transform.translation.y = pose.translation().y();
-        tf_msg.transform.translation.z = pose.translation().z();
-        tf_msg.transform.rotation.x = pose.unit_quaternion().x();
-        tf_msg.transform.rotation.y = pose.unit_quaternion().y();
-        tf_msg.transform.rotation.z = pose.unit_quaternion().z();
-        tf_msg.transform.rotation.w = pose.unit_quaternion().w();
+        if (tf_broadcaster_ != nullptr) {
+            geometry_msgs::msg::TransformStamped tf_msg;
+            tf_msg.header = ns.header;
+            tf_msg.child_frame_id = "lidar_link";
+            tf_msg.transform.translation.x = ns.pose.position.x;
+            tf_msg.transform.translation.y = ns.pose.position.y;
+            tf_msg.transform.translation.z = ns.pose.position.z;
+            tf_msg.transform.rotation = ns.pose.orientation;
+            tf_broadcaster_->sendTransform(tf_msg);
+        }
 
-        tf_broadcaster_->sendTransform(tf_msg);
+        if (odom_pub_ != nullptr) {
+            nav_msgs::msg::Odometry odom;
+            odom.header = ns.header;
+            odom.child_frame_id = "lidar_link";
+            odom.pose.pose = ns.pose;
+            odom.twist.twist.linear = ns.velocity;
+            odom_pub_->publish(odom);
+        }
 
         if (path_pub_ != nullptr) {
             geometry_msgs::msg::PoseStamped ps;
-            ps.header = tf_msg.header;
-            ps.pose.position.x = tf_msg.transform.translation.x;
-            ps.pose.position.y = tf_msg.transform.translation.y;
-            ps.pose.position.z = tf_msg.transform.translation.z;
-            ps.pose.orientation = tf_msg.transform.rotation;
-            path_.header.stamp = node_->now();
-            path_.header.frame_id = "map";
+            ps.header = ns.header;
+            ps.pose = ns.pose;
+            path_.header = ns.header;
             path_.poses.push_back(ps);
             path_pub_->publish(path_);
         }

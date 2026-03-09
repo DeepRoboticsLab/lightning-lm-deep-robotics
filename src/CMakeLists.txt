@@ -1,3 +1,7 @@
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm")
+    add_definitions(-DLIGHTNING_ARM_PLATFORM)
+endif()
+
 add_library(${PROJECT_NAME}.libs SHARED
         common/nav_state.cc
         common/constant.h

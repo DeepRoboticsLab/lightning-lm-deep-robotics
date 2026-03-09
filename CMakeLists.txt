@@ -33,6 +33,7 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(cmake/packages.cmake)
 
 # msg 和 srv
+set(MY_MSG_FILES "msg/NavState.msg")
 set(MY_SRV_FILES "")
 set(SRC_DIR ${PROJECT_SOURCE_DIR}/srv)
 file(GLOB_RECURSE SRC_FILES ${SRC_DIR}/*.srv)

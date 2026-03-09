@@ -53,11 +53,12 @@ void PangolinWindowImpl::Reset(const std::vector<Keyframe::Ptr> &keyframes) {
     for (; i < keyframes.size(); ++i) {
         const auto &keyframe = keyframes.at(i);
         current_scan_ui_ = std::make_shared<ui::UiCloud>();
-        // x86 humble
-	// CloudPtr tmp_cloud = std::make_shared<PointCloudType>(*(keyframe->GetCloud()));
-	// arm foxy
+#ifdef LIGHTNING_ARM_PLATFORM
         CloudPtr tmp_cloud = boost::make_shared<PointCloudType>(*(keyframe->GetCloud()));
-	current_scan_ui_->SetCloud(math::VoxelGrid(tmp_cloud, 0.5), keyframe->GetOptPose());
+#else
+        CloudPtr tmp_cloud = std::make_shared<PointCloudType>(*(keyframe->GetCloud()));
+#endif
+        current_scan_ui_->SetCloud(math::VoxelGrid(tmp_cloud, 0.5), keyframe->GetOptPose());
         current_scan_ui_->SetRenderColor(ui::UiCloud::UseColor::HEIGHT_COLOR);
 
         scans_.emplace_back(current_scan_ui_);

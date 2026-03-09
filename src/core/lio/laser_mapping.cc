@@ -247,9 +247,11 @@ bool LaserMapping::Run() {
 
     // update local map
     Timer::Evaluate([&, this]() { MapIncremental(); }, "    Incremental Mapping");
-
     LOG(INFO) << "[ mapping ]: In num: " << scan_undistort_->points.size() << " down " << cur_pts
               << " Map grid num: " << ivox_->NumValidGrids() << " effect num : " << effect_feat_num_;
+    // printf("\rlaser_mapping.cc:251] [ mapping ]: In num: %lu down %d Map grid num: %lu effect num : %d            ",
+    //        scan_undistort_->points.size(), cur_pts, ivox_->NumValidGrids(), effect_feat_num_);
+    // fflush(stdout);
 
     /// keyframes
     if (last_kf_ == nullptr) {
@@ -303,6 +305,11 @@ void LaserMapping::MakeKF() {
               << ", kf opt pose: " << kf->GetOptPose().translation().transpose()
               << ", lio pose: " << kf->GetLIOPose().translation().transpose();
 
+    // printf("\033[34m\rlaser_mapping.cc:302] LIO: create kf %d, state: [%.3f, %.3f, %.3f], kf opt pose: [%.3f, %.3f, %.3f]\033[0m           ",
+    //        kf->GetID(), state_point_.pos_.x(), state_point_.pos_.y(), state_point_.pos_.z(),
+    //        kf->GetOptPose().translation().x(), kf->GetOptPose().translation().y(), kf->GetOptPose().translation().z());
+    // fflush(stdout);
+
     if (options_.is_in_slam_mode_) {
         all_keyframes_.emplace_back(kf);
     }
@@ -320,9 +327,11 @@ void LaserMapping::ProcessPointCloud2(const sensor_msgs::msg::PointCloud2::Share
                 LOG(ERROR) << "lidar loop back, clear buffer";
                 lidar_buffer_.clear();
             }
-
             LOG(INFO) << "get cloud at " << std::setprecision(14) << timestamp
                       << ", latest imu: " << last_timestamp_imu_;
+
+            // printf("\rlaser_mapping.cc:324] get cloud at %.14f, latest imu: %.14f           ", timestamp, last_timestamp_imu_);
+            // fflush(stdout);
 
             CloudPtr cloud(new PointCloudType());
             preprocess_->Process(msg, cloud);

@@ -80,6 +80,9 @@ void LoopClosing::HandleKF(Keyframe::Ptr kf) {
 
     if (options_.verbose_) {
         LOG(INFO) << "lc: get kf " << cur_kf_->GetID() << " candi: " << candidates_.size();
+        // printf("\033[34m\rloop_closing.cc:82] lc: get kf %d candi: %lu\033[0m           ", 
+        //        cur_kf_->GetID(), candidates_.size());
+        // fflush(stdout);
     }
 
     // 计算回环位姿
