@@ -1,22 +1,20 @@
 //
 // Created by xiang on 25-8-27.
 //
-
+#include <gflags/gflags.h> // <--- 必须添加这一
 #include "ui/pangolin_window.h"
 
 #include <pangolin/display/display.h>
 #include <pangolin/display/view.h>
 #include <pangolin/gl/gldraw.h>
 #include <pangolin/handler/handler.h>
-#include <gflags/gflags.h>
-#include <glog/logging.h>
 
 int main(int argc, char** argv) {
     google::InitGoogleLogging(argv[0]);
     FLAGS_colorlogtostderr = true;
     FLAGS_stderrthreshold = google::INFO;
 
-    gflags::ParseCommandLineFlags(&argc, &argv, true);
+    google::ParseCommandLineFlags(&argc, &argv, true);
 
     lightning::ui::PangolinWindow ui;
     ui.Init();

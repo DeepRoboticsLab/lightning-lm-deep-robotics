@@ -53,9 +53,11 @@ void PangolinWindowImpl::Reset(const std::vector<Keyframe::Ptr> &keyframes) {
     for (; i < keyframes.size(); ++i) {
         const auto &keyframe = keyframes.at(i);
         current_scan_ui_ = std::make_shared<ui::UiCloud>();
-        // CloudPtr tmp_cloud = std::make_shared<PointCloudType>(*(keyframe->GetCloud()));
+        // x86 humble
+	// CloudPtr tmp_cloud = std::make_shared<PointCloudType>(*(keyframe->GetCloud()));
+	// arm foxy
         CloudPtr tmp_cloud = boost::make_shared<PointCloudType>(*(keyframe->GetCloud()));
-        current_scan_ui_->SetCloud(math::VoxelGrid(tmp_cloud, 0.5), keyframe->GetOptPose());
+	current_scan_ui_->SetCloud(math::VoxelGrid(tmp_cloud, 0.5), keyframe->GetOptPose());
         current_scan_ui_->SetRenderColor(ui::UiCloud::UseColor::HEIGHT_COLOR);
 
         scans_.emplace_back(current_scan_ui_);
@@ -69,6 +71,7 @@ bool PangolinWindowImpl::DeInit() {
     return true;
 }
 
+// 仅loc时用到了
 bool PangolinWindowImpl::UpdateGlobalMap() {
     if (!cloud_global_need_update_.load()) {
         return false;
