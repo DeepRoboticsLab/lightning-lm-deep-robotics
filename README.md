@@ -95,12 +95,31 @@ Original dataset addresses:
 ### Mapping Test
 
 1. Real-time mapping (real-time bag playback)
+```bash
+ros2 bag play ~/Downloads/m20/lidar_data_bag --clock
+# 实时很耗资源，在wsl上数据播放只能4帧/s
+ros2 run lightning run_slam_online --config ./src/lightning-lm/config/default_deep_robotics.yaml
+```
    - Start the mapping program:
+   
      ```ros2 run lightning run_slam_online --config ./config/default_nclt.yaml```
+
+     ```ros2 run lightning run_slam_online --config src/lightning-lm/config/default_deep_robotics.yaml```
    - Play the data bag
    - Save the map ```ros2 service call /lightning/save_map /lightning/srv/SaveMap "{map_id: new_map}"```
 2. Offline mapping (traverse data, faster)
-   - ```ros2 run lightning run_slam_offline --config ./config/default_nclt.yaml --input_bag [bag_file]```
+
+```bash
+ros2 run lightning run_slam_offline --input_bag /mnt/e/data/NCLT/20120115/20120115-002.db3 --config ./src/lightning-lm/config/default_nclt.yaml
+
+ros2 run lightning run_slam_offline --input_bag /home/msy/Downloads/m20/lidar_data_bag/lidar_data_bag_0.db3 --config ./src/lightning-lm/config/default_deep_robotics.yaml
+
+# 测试车库的，转向扫描比较全
+ros2 run lightning run_slam_offline --input_bag /home/msy/Downloads/go4/turn_merged/turn_merged.db3 --config ./src/lightning-lm/config/mid360_116.yaml
+```
+
+   - ```ros2 run lightning run_slam_offline --config ./config/default_nclt.yaml --input_bag /home/percy/third_party/lightning_lm/NCLT/20120115```
+   - ```ros2 run lightning run_slam_offline --config /home/ubuntu/deep_robotics/m20_slam/lightning_lm/src/lightning-lm/config/default_deep_robotics.yaml --input_bag /home/ubuntu/deep_robotics/m20_slam/ros_bags/lidar_data_bag```
    - It will automatically save to the data/new_map directory after finishing.
 3. Viewing the map
    - View the full map: ```pcl_viewer ./data/new_map/global.pcd```
@@ -108,13 +127,25 @@ Original dataset addresses:
    - map.pgm stores the 2D grid map information.
    - Note that during the localization program run or upon exit, results for dynamic layers might also be stored in the same directory, so there might be more files.
 
+To view the 2d map, `sudo apt install feh` and `feh data/new_map/map.pgm`
+
 ### Localization Test
+```bash
+ros2 bag play ~/Downloads/m20/lidar_data_bag --clock
+# 已经建图完成了，在实时按图定位。 no UI shows.
+# pcl_viewer data/new_map2/0.pcd 用于定位的静态地图点云
+ros2 run lightning run_loc_online --config ./src/lightning-lm/config/default_deep_robotics.yaml
+
+ros2 bag play ~/Downloads/go4/fast2_merged --clock
+ros2 run lightning run_loc_online --config ./src/lightning-lm/config/mid360_116.yaml
+```
 
 1. Real-time localization
    - Write the map path to `system.map_path` in the yaml file, default is `new_map` (consistent with the mapping default).
    - Place the vehicle at the mapping starting point.
    - Start the localization program:
      ```ros2 run lightning run_loc_online --config ./config/default_nclt.yaml```
+     ```ros2 run lightning run_loc_online --config  /home/ubuntu/deep_robotics/m20_slam/lightning_lm/src/lightning-lm/config/default_deep_robotics.yaml```
    - Play the bag or input sensor data.
 2. Offline localization
    - ```ros2 run lightning run_loc_offline --config ./config/default_nclt.yaml --input_bag [bag_file]```
@@ -123,7 +154,7 @@ Original dataset addresses:
 
 ### Debugging on Your Own Device
 
-First, you need to know your LiDAR type and set the corresponding `fasterlio.lidar_type`. Set it to 1 for Livox series, 2 for Velodyne, 3 for Ouster.
+First, you need to know your LiDAR type and set the corresponding `fasterlio.lidar_type`. Set it to 1 for Livox series, 2 for Velodyne, 3 for Ouster, 4 for RoboSense.
 If it's not one of the above types, you can refer to the Velodyne setup method.
 
 A simpler way is to first record a ros2 bag, get offline mapping and localization working, and then debug the online situation.
@@ -289,7 +320,7 @@ Ubuntu 20.04 应该也可行，未测试。
 
 ### 在您自己的设备上调试
 
-首先您需要知道自己的雷达类型，设置对应的fasterlio.lidar_type类型。livox系列的配置成1，Velodyne的设置成2,ouster设置成3.
+首先您需要知道自己的雷达类型，设置对应的fasterlio.lidar_type类型。livox系列的配置成1，Velodyne的设置成2,ouster设置成3,robosense设置为4.
 如果不在以上种类，可以参考velodyne的设置方式。
 
 比较简单的方式是先录一个ros2的数据包，将离线的建图、定位调通后，再去调试在线的情况。

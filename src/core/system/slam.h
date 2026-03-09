@@ -8,6 +8,8 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
+#include <nav_msgs/msg/path.hpp>
+#include <tf2_ros/transform_broadcaster.h>
 #include <string>
 
 #include "lightning/srv/save_map.hpp"
@@ -45,8 +47,11 @@ class SlamSystem {
         bool with_loop_closing_ = true;     // 是否需要回环检测
         bool with_visualization_ = true;    // 是否需要可视化UI
         bool with_2dvisualization_ = true;  // 是否需要2D可视化UI
+        bool with_rviz_visualization_ = false; // 是否需要RViz可视化
+        bool pub_tf_ = false;               // 是否需要发布TF
 
         bool step_on_kf_ = true;  // 是否在关键帧处暂停p
+        bool log_pose_opt_ = false; // 是否打印位姿和速度
     };
 
     using SaveMapService = srv::SaveMap;
@@ -94,6 +99,14 @@ class SlamSystem {
 
     /// 实时模式下的ros2 node, subscribers
     rclcpp::Node::SharedPtr node_;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_pub_ = nullptr;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr map_pub_ = nullptr;
+    rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_ = nullptr;
+    std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_ = nullptr;
+
+    std::map<unsigned long, CloudPtr> global_map_clouds_;
+    nav_msgs::msg::Path path_;
+
     std::string imu_topic_;
     std::string cloud_topic_;
     std::string livox_topic_;

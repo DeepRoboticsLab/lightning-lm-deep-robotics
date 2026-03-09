@@ -32,8 +32,11 @@ bool SlamSystem::Init(const std::string& yaml_path) {
     options_.with_loop_closing_ = yaml["system"]["with_loop_closing"].as<bool>();
     options_.with_visualization_ = yaml["system"]["with_ui"].as<bool>();
     options_.with_2dvisualization_ = yaml["system"]["with_2dui"].as<bool>();
+    options_.with_rviz_visualization_ = yaml["system"]["enable_lidar_loc_rviz"] ? yaml["system"]["enable_lidar_loc_rviz"].as<bool>() : false;
+    options_.pub_tf_ = yaml["system"]["pub_tf"] ? yaml["system"]["pub_tf"].as<bool>() : false;
     options_.with_gridmap_ = yaml["system"]["with_g2p5"].as<bool>();
     options_.step_on_kf_ = yaml["system"]["step_on_kf"].as<bool>();
+    options_.log_pose_opt_ = yaml["system"]["log_pose_opt"] ? yaml["system"]["log_pose_opt"].as<bool>() : false;
 
     if (options_.with_loop_closing_) {
         LOG(INFO) << "slam with loop closing";
@@ -66,14 +69,7 @@ bool SlamSystem::Init(const std::string& yaml_path) {
         if (options_.with_2dvisualization_) {
             g2p5_->SetMapUpdateCallback([this](g2p5::G2P5MapPtr map) {
                 cv::Mat image = map->ToCV();
-                // Resize image if too large  
-                if (image.rows > 800 || image.cols > 1200) {  
-                    cv::resize(image, image, cv::Size(1200, 800), 0, 0, cv::INTER_AREA);  
-                }  
-                
-                cv::imshow("map", image);  
-                cv::resizeWindow("map", 1200, 800);  // Set window size  
-                        cv::imshow("map", image);
+                cv::imshow("map", image);
 
                 if (options_.step_on_kf_) {
                     cv::waitKey(0);
@@ -120,11 +116,21 @@ bool SlamSystem::Init(const std::string& yaml_path) {
                 Timer::Evaluate([&]() { ProcessLidar(cloud); }, "Proc Lidar", true);
             });
 
+        if (options_.with_rviz_visualization_) {
+            std::string scan_topic = yaml["system"]["rviz_current_scan_topic"] ? yaml["system"]["rviz_current_scan_topic"].as<std::string>() : "lightning/current_scan";
+            std::string map_topic = yaml["system"]["rviz_global_map_topic"] ? yaml["system"]["rviz_global_map_topic"].as<std::string>() : "lightning/global_map";
+            cloud_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>(scan_topic, 10);
+            map_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>(map_topic, 1);
+            path_pub_ = node_->create_publisher<nav_msgs::msg::Path>("lightning/path", 10);
+        }
+
+        if (options_.pub_tf_) {
+            tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(node_);
+        }
+
         savemap_service_ = node_->create_service<SaveMapService>(
-            "lightning/save_map",
-            [this](const SaveMapService::Request::SharedPtr req, SaveMapService::Response::SharedPtr res) {
-                SaveMap(req, res);
-            });
+            "lightning/save_map", [this](const SaveMapService::Request::SharedPtr req,
+                                         SaveMapService::Response::SharedPtr res) { SaveMap(req, res); });
 
         LOG(INFO) << "online slam node has been created.";
     }
@@ -255,6 +261,23 @@ void SlamSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr& cl
     lio_->ProcessPointCloud2(cloud);
     lio_->Run();
 
+    if (options_.log_pose_opt_) {
+        auto state = lio_->GetState();
+        LOG(INFO) << "pose: " << state.pos_.transpose();
+        LOG(INFO) << "velocity: " << state.vel_.transpose();
+    }
+
+    if (options_.with_rviz_visualization_ && cloud_pub_ != nullptr) {
+        auto cloud_undistort = lio_->GetScanUndist();
+        if (cloud_undistort) {
+            sensor_msgs::msg::PointCloud2 ros_cloud;
+            pcl::toROSMsg(*cloud_undistort, ros_cloud);
+            ros_cloud.header.frame_id = "map";
+            ros_cloud.header.stamp = node_->now();
+            cloud_pub_->publish(ros_cloud);
+        }
+    }
+
     auto kf = lio_->GetKeyframe();
     if (kf != cur_kf_) {
         cur_kf_ = kf;
@@ -276,6 +299,60 @@ void SlamSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr& cl
 
     if (ui_) {
         ui_->UpdateKF(cur_kf_);
+    }
+
+    if (cloud_pub_ != nullptr) {
+        sensor_msgs::msg::PointCloud2 ros_cloud;
+        pcl::toROSMsg(*cur_kf_->GetCloud(), ros_cloud);
+        ros_cloud.header.frame_id = "map";
+        ros_cloud.header.stamp = node_->now();
+        cloud_pub_->publish(ros_cloud);
+    }
+
+    if (tf_broadcaster_ != nullptr) {
+        geometry_msgs::msg::TransformStamped tf_msg;
+        tf_msg.header.stamp = node_->now();
+        tf_msg.header.frame_id = "map";
+        tf_msg.child_frame_id = "lidar_link";
+
+        SE3 pose = cur_kf_->GetOptPose();
+        tf_msg.transform.translation.x = pose.translation().x();
+        tf_msg.transform.translation.y = pose.translation().y();
+        tf_msg.transform.translation.z = pose.translation().z();
+        tf_msg.transform.rotation.x = pose.unit_quaternion().x();
+        tf_msg.transform.rotation.y = pose.unit_quaternion().y();
+        tf_msg.transform.rotation.z = pose.unit_quaternion().z();
+        tf_msg.transform.rotation.w = pose.unit_quaternion().w();
+
+        tf_broadcaster_->sendTransform(tf_msg);
+
+        if (path_pub_ != nullptr) {
+            geometry_msgs::msg::PoseStamped ps;
+            ps.header = tf_msg.header;
+            ps.pose.position.x = tf_msg.transform.translation.x;
+            ps.pose.position.y = tf_msg.transform.translation.y;
+            ps.pose.position.z = tf_msg.transform.translation.z;
+            ps.pose.orientation = tf_msg.transform.rotation;
+            path_.header.stamp = node_->now();
+            path_.header.frame_id = "map";
+            path_.poses.push_back(ps);
+            path_pub_->publish(path_);
+        }
+    }
+
+    if (map_pub_ != nullptr) {
+        global_map_clouds_[cur_kf_->GetID()] = cur_kf_->GetCloud();
+        
+        CloudPtr global_map(new PointCloudType);
+        for (const auto& kf_cloud : global_map_clouds_) {
+            *global_map += *kf_cloud.second;
+        }
+
+        sensor_msgs::msg::PointCloud2 ros_map;
+        pcl::toROSMsg(*global_map, ros_map);
+        ros_map.header.frame_id = "map";
+        ros_map.header.stamp = node_->now();
+        map_pub_->publish(ros_map);
     }
 }
 
@@ -287,6 +364,23 @@ void SlamSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr
     lio_->ProcessPointCloud2(cloud);
     lio_->Run();
 
+    if (options_.log_pose_opt_) {
+        auto state = lio_->GetState();
+        LOG(INFO) << "pose: " << state.pos_.transpose();
+        LOG(INFO) << "velocity: " << state.vel_.transpose();
+    }
+
+    if (options_.with_rviz_visualization_ && cloud_pub_ != nullptr) {
+        auto cloud_undistort = lio_->GetScanUndist();
+        if (cloud_undistort) {
+            sensor_msgs::msg::PointCloud2 ros_cloud;
+            pcl::toROSMsg(*cloud_undistort, ros_cloud);
+            ros_cloud.header.frame_id = "map";
+            ros_cloud.header.stamp = node_->now();
+            cloud_pub_->publish(ros_cloud);
+        }
+    }
+
     auto kf = lio_->GetKeyframe();
     if (kf != cur_kf_) {
         cur_kf_ = kf;
@@ -308,6 +402,60 @@ void SlamSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr
 
     if (ui_) {
         ui_->UpdateKF(cur_kf_);
+    }
+
+    if (cloud_pub_ != nullptr) {
+        sensor_msgs::msg::PointCloud2 ros_cloud;
+        pcl::toROSMsg(*cur_kf_->GetCloud(), ros_cloud);
+        ros_cloud.header.frame_id = "map";
+        ros_cloud.header.stamp = node_->now();
+        cloud_pub_->publish(ros_cloud);
+    }
+
+    if (tf_broadcaster_ != nullptr) {
+        geometry_msgs::msg::TransformStamped tf_msg;
+        tf_msg.header.stamp = node_->now();
+        tf_msg.header.frame_id = "map";
+        tf_msg.child_frame_id = "lidar_link";
+
+        SE3 pose = cur_kf_->GetOptPose();
+        tf_msg.transform.translation.x = pose.translation().x();
+        tf_msg.transform.translation.y = pose.translation().y();
+        tf_msg.transform.translation.z = pose.translation().z();
+        tf_msg.transform.rotation.x = pose.unit_quaternion().x();
+        tf_msg.transform.rotation.y = pose.unit_quaternion().y();
+        tf_msg.transform.rotation.z = pose.unit_quaternion().z();
+        tf_msg.transform.rotation.w = pose.unit_quaternion().w();
+
+        tf_broadcaster_->sendTransform(tf_msg);
+
+        if (path_pub_ != nullptr) {
+            geometry_msgs::msg::PoseStamped ps;
+            ps.header = tf_msg.header;
+            ps.pose.position.x = tf_msg.transform.translation.x;
+            ps.pose.position.y = tf_msg.transform.translation.y;
+            ps.pose.position.z = tf_msg.transform.translation.z;
+            ps.pose.orientation = tf_msg.transform.rotation;
+            path_.header.stamp = node_->now();
+            path_.header.frame_id = "map";
+            path_.poses.push_back(ps);
+            path_pub_->publish(path_);
+        }
+    }
+
+    if (map_pub_ != nullptr) {
+        global_map_clouds_[cur_kf_->GetID()] = cur_kf_->GetCloud();
+        
+        CloudPtr global_map(new PointCloudType);
+        for (const auto& kf_cloud : global_map_clouds_) {
+            *global_map += *kf_cloud.second;
+        }
+
+        sensor_msgs::msg::PointCloud2 ros_map;
+        pcl::toROSMsg(*global_map, ros_map);
+        ros_map.header.frame_id = "map";
+        ros_map.header.stamp = node_->now();
+        map_pub_->publish(ros_map);
     }
 }
 

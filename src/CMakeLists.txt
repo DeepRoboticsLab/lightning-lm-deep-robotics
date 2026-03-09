@@ -77,7 +77,6 @@ add_subdirectory(core/miao)
 
 target_link_libraries(${PROJECT_NAME}.libs
         ${third_party_libs}
-        ${PCL_LIBRARIES}
         miao.core
         miao.utils
         livox_interfaces2__rosidl_typesupport_cpp

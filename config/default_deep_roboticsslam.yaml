@@ -1,4 +1,4 @@
-# 针对NCLT的配置
+
 common:
   lidar_topic: "/LIDAR/POINTS"
   livox_lidar_topic: "/livox/lidar"
@@ -28,7 +28,7 @@ fasterlio:
   b_acc_cov: 0.0001
   b_gyr_cov: 0.0001
   extrinsic_est_en: false      # true: enable the online estimation of IMU-LiDAR extrinsic
-  extrinsic_T: [ 0, 0, 0. ]
+  extrinsic_T: [ 0, 0, 0 ]
   extrinsic_R: [ 1, 0, 0,
                  0, 1, 0,
                  0, 0, 1 ]
@@ -41,22 +41,25 @@ g2p5:
   floor_height: -0.4   # 默认地面高度
   min_th_floor: 0.50  # 距离地面这个高度的障碍物被扫入栅格地图中
   max_th_floor: 1.0  # 距离地面这个高度的障碍物被扫入栅格地图中
-  grid_map_resolution: 0.05 # 栅格地图分辨率
+  grid_map_resolution: 0.03 # 栅格地图分辨率
 
 system:
   with_loop_closing: true # 是否需要回环检测
-  with_ui: true # 是否需要3D UI
+  with_ui: false # 是否需要3D UI (RK3588请设为false)
   with_2dui: false # 是否需要2D UI
   with_g2p5: true # 是否需要栅格地图
   step_on_kf: false # 是否在关键帧处暂停
 
   enable_lidar_loc_skip: false
-  enable_lidar_loc_rviz: true
+  log_pose_opt: true # 命令行打印位置和速度
+  enable_lidar_loc_rviz: false # 是否启用RViz点云发布
+  rviz_current_scan_topic: "/current_scan_cloud"
+  rviz_global_map_topic: "/global_map_cloud"
   enable_lidar_odom_skip: false
   evaluation: false
   lidar_loc_skip_num: 4
   lidar_odom_skip_num: 2
-  map_path: ./data/new_map/
+  map_path: ./data/office4/
   pub_tf: true
 
 loop_closing:
@@ -77,8 +80,8 @@ lidar_loc:
   filter_z_max: 30.0
   filter_z_min: -1.0
   force_2d: false
-  grid_search_angle_range: 30.0
-  grid_search_angle_step: 6
+  grid_search_angle_range: 180.0
+  grid_search_angle_step: 60
   lidar_loc_odom_th: 0.5
   init_with_fp: true
   min_init_confidence: 1.8
@@ -90,10 +93,10 @@ lidar_loc:
 maps:
   delete_when_unload: false
   dyn_cloud_policy: persistent
-  load_dyn_cloud: false
+  load_dyn_cloud: true
   load_map_size: 2
   max_pts_dyn_chunk: 100000
-  save_dyn_when_quit: false
+  save_dyn_when_quit: true
   save_dyn_when_unload: false
   unload_map_size: 4
   with_dyn_area: false
@@ -116,10 +119,10 @@ pgo:
   rtk_outlier_th: 1.0
   smooth_factor: 0.01
 roi:
-  height_max: 2.0
-  height_min: -1.0
-  range_max: 20
-  range_min: 0.5
+  height_max: 0.5
+  height_min: -2.0
+  range_max: 70
+  range_min: 3.0
 ui:
   car_length: 2.0
   car_width: 1.6
