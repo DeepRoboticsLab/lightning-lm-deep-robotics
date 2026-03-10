@@ -12,6 +12,8 @@
 
 #include <yaml-cpp/yaml.h>
 #include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <opencv2/opencv.hpp>
 
 namespace lightning {
@@ -32,13 +34,25 @@ bool SlamSystem::Init(const std::string& yaml_path) {
     options_.with_loop_closing_ = yaml["system"]["with_loop_closing"].as<bool>();
     options_.with_visualization_ = yaml["system"]["with_ui"].as<bool>();
     options_.with_2dvisualization_ = yaml["system"]["with_2dui"].as<bool>();
-    options_.with_rviz_visualization_ = yaml["system"]["enable_lidar_loc_rviz"] ? yaml["system"]["enable_lidar_loc_rviz"].as<bool>() : false;
     options_.pub_tf_ = yaml["system"]["pub_tf"] ? yaml["system"]["pub_tf"].as<bool>() : false;
     options_.pub_odom_ = yaml["system"]["pub_odom"] ? yaml["system"]["pub_odom"].as<bool>() : false;
     options_.with_gridmap_ = yaml["system"]["with_g2p5"].as<bool>();
     options_.step_on_kf_ = yaml["system"]["step_on_kf"].as<bool>();
     options_.log_pose_opt_ = yaml["system"]["log_pose_opt"] ? yaml["system"]["log_pose_opt"].as<bool>() : false;
+    options_.enable_lidar_rviz_ = yaml["system"]["enable_lidar_loc_rviz"] ? yaml["system"]["enable_lidar_loc_rviz"].as<bool>() : false;
+    options_.enable_path_rviz_ = yaml["system"]["enable_path_rviz"] ? yaml["system"]["enable_path_rviz"].as<bool>() : false;
+    if(options_.enable_lidar_rviz_ && !options_.enable_path_rviz_) {
+        options_.enable_path_rviz_ = true; // 发布路径时会包含位姿信息，方便调试
+    }
 
+     /// loop closing
+     if (options_.with_loop_closing_) {
+        LOG(INFO) << "slam with loop closing";
+        LoopClosing::Options options;
+        options.online_mode_ = options_.online_mode_;
+        lc_ = std::make_shared<LoopClosing>(options);
+        lc_->Init(yaml_path);
+    }
     if (options_.with_loop_closing_) {
         LOG(INFO) << "slam with loop closing";
         LoopClosing::Options options;
@@ -117,11 +131,14 @@ bool SlamSystem::Init(const std::string& yaml_path) {
                 Timer::Evaluate([&]() { ProcessLidar(cloud); }, "Proc Lidar", true);
             });
 
-        if (options_.with_rviz_visualization_) {
+        if (options_.enable_lidar_rviz_) {
             std::string scan_topic = yaml["system"]["rviz_current_scan_topic"] ? yaml["system"]["rviz_current_scan_topic"].as<std::string>() : "lightning/current_scan";
             std::string map_topic = yaml["system"]["rviz_global_map_topic"] ? yaml["system"]["rviz_global_map_topic"].as<std::string>() : "lightning/global_map";
             cloud_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>(scan_topic, 10);
             map_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>(map_topic, 1);
+        }
+
+        if (options_.enable_path_rviz_) {
             path_pub_ = node_->create_publisher<nav_msgs::msg::Path>("lightning/path", 10);
         }
 
@@ -138,7 +155,11 @@ bool SlamSystem::Init(const std::string& yaml_path) {
             "lightning/save_map", [this](const SaveMapService::Request::SharedPtr req,
                                          SaveMapService::Response::SharedPtr res) { SaveMap(req, res); });
 
-        LOG(INFO) << "online slam node has been created.";
+        savepath_service_ = node_->create_service<srv::SavePath>(
+            "lightning/save_path", [this](const srv::SavePath::Request::SharedPtr req,
+                                          srv::SavePath::Response::SharedPtr res) { SavePath(req, res); });
+
+        LOG(INFO) << "SavePath service has been created.";
     }
 
     return true;
@@ -162,6 +183,38 @@ void SlamSystem::SaveMap(const SaveMapService::Request::SharedPtr request,
 
     SaveMap(save_path);
     response->response = 0;
+}
+
+// ros服务回调，保存轨迹
+// 如果请求里没有指定路径，则默认保存在./data/下，文件名为path_年月日时分秒.txt
+// ros2 service call /lightning/save_path lightning/srv/SavePath
+void SlamSystem::SavePath(const srv::SavePath::Request::SharedPtr request, srv::SavePath::Response::SharedPtr response) {
+    std::string save_path = request->file_path;
+    if (save_path.empty()) {
+        char time_str[64];
+        time_t now = time(nullptr);
+        strftime(time_str, sizeof(time_str), "%Y%m%d_%H%M%S", localtime(&now));
+        save_path = "./data/path_" + std::string(time_str) + ".txt";
+    }
+
+    std::ofstream file(save_path);
+    if (!file.is_open()) {
+        response->success = false;
+        response->message = "Failed to open file: " + save_path;
+        return;
+    }
+
+    for (const auto& pose : path_.poses) {
+        file << std::fixed << std::setprecision(5) 
+             << pose.header.stamp.sec << "." << std::setfill('0') << std::setw(9) << pose.header.stamp.nanosec << " "
+             << pose.pose.position.x << " " << pose.pose.position.y << " " << pose.pose.position.z << " "
+             << pose.pose.orientation.x << " " << pose.pose.orientation.y << " " 
+             << pose.pose.orientation.z << " " << pose.pose.orientation.w << "\n";
+    }
+
+    file.close();
+    response->success = true;
+    response->message = "Path saved successfully to " + save_path + ". Total poses: " + std::to_string(path_.poses.size());
 }
 
 void SlamSystem::SaveMap(const std::string& path) {
@@ -326,9 +379,9 @@ void SlamSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr& cl
             odom_pub_->publish(odom);
         }
 
-        if (options_.with_rviz_visualization_ && path_pub_ != nullptr) {
+        if (options_.enable_path_rviz_ && path_pub_ != nullptr) {
             geometry_msgs::msg::PoseStamped ps;
-            ps.header = ns.header;
+            ps.header = cloud->header;
             ps.pose = ns.pose;
             path_.header = ns.header;
             path_.poses.push_back(ps);
@@ -336,7 +389,7 @@ void SlamSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr& cl
         }
     }
 
-    if (options_.with_rviz_visualization_ && cloud_pub_ != nullptr) {
+    if (options_.enable_lidar_rviz_ && cloud_pub_ != nullptr) {
         auto scan_world = lio_->GetScanDownWorld();
         if (scan_world && !scan_world->empty()) {
             sensor_msgs::msg::PointCloud2 scan_msg;
@@ -450,9 +503,9 @@ void SlamSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr
             odom_pub_->publish(odom);
         }
 
-        if (options_.with_rviz_visualization_ && path_pub_ != nullptr) {
+        if (options_.enable_path_rviz_ && path_pub_ != nullptr) {
             geometry_msgs::msg::PoseStamped ps;
-            ps.header = ns.header;
+            ps.header = cloud->header;
             ps.pose = ns.pose;
             path_.header = ns.header;
             path_.poses.push_back(ps);
@@ -460,7 +513,7 @@ void SlamSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr
         }
     }
 
-    if (options_.with_rviz_visualization_ && cloud_pub_ != nullptr) {
+    if (options_.enable_lidar_rviz_ && cloud_pub_ != nullptr) {
         auto scan_world = lio_->GetScanDownWorld();
         if (scan_world && !scan_world->empty()) {
             sensor_msgs::msg::PointCloud2 scan_msg;

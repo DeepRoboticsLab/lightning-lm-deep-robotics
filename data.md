@@ -52,21 +52,10 @@ ros2 run lightning run_slam_online --config ./src/lightning-lm/config/default_de
 ros2 interface show lightning/msg/NavState
 ros2 topic echo /lightning/nav_state
 ```
-<!-- 
-开启3D UI 会直接崩溃:
- ros2 run lightning run_slam_online --config ./src/lightning-lm/config/default.yaml
-I20240724 21:11:59.484977  4450 laser_mapping.cc:14] init laser mapping from ./src/lightning-lm/config/default_deep_robotics.yaml
-I20240724 21:11:59.491555  4450 laser_mapping.cc:74] lidar_type 4
-I20240724 21:11:59.491621  4450 laser_mapping.cc:86] Using RoboSense Lidar
-I20240724 21:11:59.495266  4450 slam.cc:39] slam with loop closing
-I20240724 21:11:59.499159  4450 loop_closing.cc:55] loop closing module is running in online mode
-I20240724 21:11:59.499384  4450 slam.cc:47] slam with 3D UI
-error: eglBindAPI(0x30a2) failed: EGL_BAD_PARAMETER (300c)
- -->
-
 
 #### 保存地图
 ```bash
+source /opt/ros/foxy/setup.bash
 source /opt/robot/scripts/setup_ros2.sh && source install/setup.bash
 
 ros2 service call /lightning/save_map lightning/srv/SaveMap "{map_id: 'office4f'}"
@@ -91,74 +80,8 @@ ros2 run tf2_ros tf2_echo map lidar_link
 ros2 run tf2_ros tf2_echo base_link lidar_link
 ```
 
-```log
-root@host.v1.4:/home/user/lightinglm_ws# ros2 run tf2_ros tf2_monitor
-Gathering data on all frames for 10 seconds...
 
-
-
-RESULTS: for all Frames
-
-Frames:
-Frame: base_link, published by <no authority available>, Average Delay: 5.09318e+07, Max Delay: 5.09318e+07
-
-All Broadcasters:
-Node: <no authority available> 11.5919 Hz, Average Delay: 5.09318e+07 Max Delay: 5.09318e+07
-```
-
-
-#### glog
-```bash
-sudo rm -rf /usr/local/include/glog
-user@host.v1.4:~/glog/build$ sudo rm -f /usr/local/lib/libglog.*
-user@host.v1.4:~/glog/build$ sudo rm -f /usr/local/lib/libglog.so*
-user@host.v1.4:~/glog/build$ sudo rm -f /usr/local/lib/pkgconfig/glog.pc
-然后
-sudo ldconfig
-ldd install/lightning/lib/lightning/run_slam_online | grep -E "glog|gflags"
-        libglog.so.0 => /lib/aarch64-linux-gnu/libglog.so.0 (0x0000007faf10d000)
-        libgflags.so.2.2 => /lib/aarch64-linux-gnu/libgflags.so.2.2 (0x0000007faeeed000)
-        libglog.so.1 => not found
-        libglog.so.1 => not found
-所以需要重新编译：
-
-按你说的
-sudo apt install libgoogle-glog-dev libgflags-dev
-Reading package lists... Done
-Building dependency tree
-Reading state information... Done
-libgflags-dev is already the newest version (2.2.2-1build1).
-libgoogle-glog-dev is already the newest version (0.4.0-1build1).
-The following packages were automatically installed and are no longer required:
-  libopts25 sntp
-Use 'sudo apt autoremove' to remove them.
-0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.
-user@host.v1.4:~/lightinglm_ws$ sudo ldconfig
-user@host.v1.4:~/lightinglm_ws$ rm -rf build/lightning install/lightning
-user@host.v1.4:~/lightinglm_ws$ colcon build --packages-select lightning
-Starting >>> lightning
---- stderr: lightning
-CMake Error at cmake/packages.cmake:1 (find_package):
-  By not providing "Findglog.cmake" in CMAKE_MODULE_PATH this project has
-  asked CMake to find a package configuration file provided by "glog", but
-  CMake did not find one.
-
-  Could not find a package configuration file provided by "glog" with any of
-  the following names:
-
-    glogConfig.cmake
-    glog-config.cmake
-
-  Add the installation prefix of "glog" to CMAKE_PREFIX_PATH or set
-  "glog_DIR" to a directory containing one of the above files.  If "glog"
-  provides a separate development package or SDK, be sure it has been
-  installed.
-Call Stack (most recent call first):
-  CMakeLists.txt:33 (include)
-
-```
-
-### bag
+### 实机录制 bag
 ```bash
 sudo su
 source /opt/robot/scripts/setup_ros2.sh
@@ -168,67 +91,12 @@ source /opt/robot/scripts/setup_ros2.sh
 ping 10.21.31.106
 systemctl list-units --type=service --state=running
 
-taskset -c 4,5,6,7 chrt 90 ros2 bag record -o lio260305 /tf /IMU /LIDAR/POINTS 
+taskset -c 4,5,6,7 chrt 90 ros2 bag record -o lio260310 /tf /IMU /LIDAR/POINTS 
 
 scp user@10.21.31.104:/home/user/lightning_ws/lio260305.tar.gz /mnt/e/data/
 
-:~/lightning_ws$ ros2 topic list
-/ALIGNED_POINTS
-/BATTERY_CHARGE_ENABLE
-/BATTERY_DATA
-/CANCEL_NAV
-/CHARGE_CMD
-/CHARGE_STATUS
-/CPU_103
-/CPU_104
-/CPU_106
-/EXCEPTION_NOTIFICATION
-/FAULT_STATUS
-/FIBOCOM/net_rtk/gngga
-/FIBOCOM/net_rtk/heading
-/FULL_CLOUD_MAP
-/GAIT
-/GLOBAL_PLANNER_STATUS
-/GOAL
-/GPS
-/GRIDS_ID
-/GRID_MAP
-/HANDLE_STEER
-/HEIGHT_IMAGE
-/HEIGHT_MAP_STATUS
-/HES_STATUS
-/IMU
-/IMU_DATA
-/IMU_DATA_10HZ
-/JOINTS_CMD
-/JOINTS_DATA
-/JOINTS_DATA_10HZ
-/LED/STATUS
-/LIDAR/POINTS
-/LIDAR/STATUS
-/LOCATION_STATUS
-/LOCATION_STATUS/MATCHING_ERROR
-/LOC_BODY_POINTS
-/MOTION_INFO
-/MOTION_STATE
-/MOTION_STATUS
-/NAV_CMD
-/NAV_STATUS
-/ODOM
-/OOA_STATUS
-/PLANNER_STATUS
-/REAL_STEER
-/STEER
-/TERRAIN_CLASSIFIER_STATUS
-/TRACK_PATH
-/fibo_fusion_pose
-/fibo_fusion_state
-/initialpose
-/parameter_events
-/rosout
-/tf
 
-### 编译结果
+### 数据内容
 
 ```shell
 
@@ -279,8 +147,10 @@ ros2 bag play /mnt/d/Develop/degraded/tunnel1
 /mnt/e/data/tunnel1
 /mnt/e/data/tunnel2
    /imu/data /leg_odom /lidar_points /camera/accel/sample /camera/gyro/sample /camera/odom/sample /odom /tf /tf_static
+
 ```
 
+### 运行结果
 ros2 run lightning run_slam_offline --input_bag ~/Downloads/go4/turn_merged --config ./lightning-lm2/config/mid360_116.yaml
 
 >>> ===== Printing run time =====
@@ -297,4 +167,3 @@ I1120 14:36:16.839238 timer.cc:26] >>> ===== Printing run time end =====
 
 
 ros2 run lightning run_slam_online --config ./config/mid360_116.yaml
-```

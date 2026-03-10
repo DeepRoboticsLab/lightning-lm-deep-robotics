@@ -41,7 +41,6 @@ source /opt/ros/humble/setup.bash
 colcon build --parallel-workers 1 --executor sequential --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
 ```
-The compalitation could last about 20 minutes.
 
 ## 3. Configuration
 
@@ -51,30 +50,6 @@ The primary configuration file for the M20 robot is located at:
 **Key Configuration Parameters:**
 *   **LiDAR Type:** Ensure `fasterlio.lidar_type` is set to `4` (RoboSense).
 *   **Topics:** Check that `common.lidar_topic` and `common.imu_topic` match the sensor output in your bag or live stream.
-
-### Mapping mode configuration
-The following options are added, with respect to the original version:
-1. Print or publish localization results and odometry messages.
-2. Optionally publish keyframe point clouds.
-```yaml
-system:
-  log_pose_opt: false               # Print pos/vel directly to terminal
-  pub_odom: true                    # Publish odometry topic
-  enable_lidar_loc_rviz: false      # Enable RViz point cloud publishing
-  rviz_current_scan_topic: "/current_scan_cloud"
-  rviz_global_map_topic: "/global_map_cloud"
-  pub_tf: true                      # pub_tf only works in original LocSystem; added map->lidar_link tf publishing to slamOnline
-```
-
-### Localization mode configuration
-Firstly check the map_path is correct. If you need to manually set another initial pose, use the following in the config:
-```yaml
-system:
-  map_path: ./data/new_map/
-  use_init_pose: true
-  init_pos: [0.0, 0.0, 0.0]         # Initial position in the point cloud [x, y, z]
-  init_quat: [0.0, 0.0, 0.0, 1.0]   # Initial quaternion relative to the global map [x, y, z, w]
-```
 
 ## 4. Mapping (SLAM)
 
@@ -120,14 +95,6 @@ system:
     sudo apt install feh
     feh data/new_map/map.pgm
     ```
-### rviz2 for Real-time Visualization
-Although the original Pangolin interface is more efficient, rviz2 visualization is also provided.
-
-The rviz display includes tf, Odometry, PointCloud2-currentScan, and PointCloud2-globalMap. The currentScan is transformed to the global 'map' frame and processed by Undistortion and Downsampling.
-```bash
-rviz2 -d src/lightning-lm/config/showbodypc.rviz
-```
-If `system.pub_tf: true`, the `/lightning/odom` odometry topic will be visible here.
 
 ## 5. Localization
 
@@ -152,8 +119,164 @@ Run localization on a bag file without real-time constraints to verify algorithm
 ros2 run lightning run_loc_offline --config ./src/lightning-lm/config/default_deep_roboticsloc.yaml --input_bag [path_to_bag]
 ```
 
-### rviz2 for Real-time Visualization
-The rviz display includes tf, Odometry, PointCloud2-currentScan, PointCloud2-globalMap. The global map is set by the input file, which remains constant during online operation.
+## M20 Hardware Deployment
+We test on the AOS platform.
+
+### Hardware Configuration
+#### Networking
+Connect the AOS host to the network.
+Modify `vim /etc/NetworkManager/NetworkManager.conf` according to the software documentation—remove the relevant sections.
+Running `nmcli d wifi list` should then display all available WiFi networks.
+Set the name and connect using:
+`sudo nmcli d wifi connect "<wifiname>" password "password" ifname wlan0`.
+
+To maintain a continuous rviz display while the robot is moving, ensure a persistent WiFi connection is maintained.
+
+#### Point Cloud Permissions
+Enable the service on the NOS host and select the `user` account.
+```bash
+ssh user@10.21.31.106
+user@host.v1.4:~$ systemctl start multicast-relay.service
+```
+Once complete, switch to the target host, enter `su` mode, and check the point cloud:
+```bash
+source /opt/robot/scripts/setup_ros2.sh
+ros2 topic hz /LIDAR/POINTS
+```
+These steps are required for each SLAM try, in other words, always check LiDAR topic accessibility first.
+
+### Preparation
+#### Dependencies
+
+- `sudo apt install libgflags-dev libyaml-cpp-dev`
+- glog-v0.6.0     # Build from source
+- ros2 foxy
+- `sudo apt install ros-foxy-pcl-conversions`
+- Pangolin-0.9.3  # Build from source
+
+The Pangolin version uses the zip in this repo with `Wno-dev` modifications. Using the option `cmake -DBUILD_EXAMPLES=OFF -DBUILD_TOOLS=OFF -DCMAKE_CXX_FLAGS="-Wno-error" ..` will speed up the build.
+
+#### Compilation
+To compile `lightning-lm` on M20, refer to the [Low Memory Build](#low-memory-build) section.
+
+The compilation may take approximately 20 minutes.
+
+### Visualization Issues
+3D UI window in `run_slam_online` crash when starting the `pangolin`, primarily due to **OpenGL/EGL context initialization failure**. Error is `eglGetBindAPI(0x30a2) failed: EGL_BAD_PARAMETER (300c)`.
+Due to compatibility issues with EGL + OpenGL support on the RK3588, Pangolin visualization (and other OpenGL applications) may fail to open.
+
+Therefore, this modified version primarily utilizes **rviz2 for visualization**.
+
+## SLAM
+Make sure:
+- Ensure the robot stands when starting program, since system may substract under ground points.
+- Verify that the input point cloud topic is visible.
+- If using rviz2 for visualization, check that `pub_tf` is enabled.
+- Dynamic obstacles like cars and people may degrade system performance. In narrow tunnels or when the LiDAR is obstructed, localization may be lost.
+
+### start SLAM/Loc online
+To facilitate debugging in the terminal, you can use tmux to open 3 windows by running `./start_lg_rviz_session.sh`. Switch between windows, check if all commands works, if not,  re-enter the corresponding commands as needed.
+#### SLAM mode
+
+SLAM mode:
+```bash
+ros2 run lightning run_slam_online --config src/lightning-lm/config/default_deep_roboticsslam.yaml
+rviz2 -d src/lightning-lm/config/showbodypc.rviz
+ros2 topic echo /lightning/nav_state
+ros2 service call /lightning/save_map lightning/srv/SaveMap "{map_id: 'office4'}"
+```
+
+#### Loc mode
+The procedure is basically the same as SLAM, but you need to ensure the map configuration is correct. Check:
+```yaml
+system:
+  map_path: ./data/office4/
+```
+And verify the point cloud with `pcl_viewer ./data/office4/global.pcl`.
+
+Loc mode:
+```bash
+ros2 run lightning run_loc_online --config src/lightning-lm/config/default_deep_roboticsloc.yaml
+rviz2 -d src/lightning-lm/config/showglobalmap.rviz
+ros2 topic echo /lightning/nav_state
+```
+
+### tf Check
+We publish the `map->lidar_link` transform in `slamOnline` for visualization. Note that `pub_tf` only exists in the `LocSystem` of the original version.
+
+```bash
+ros2 run tf2_tools view_frames
+ros2 topic echo /tf
+ros2 run tf2_ros tf2_echo base_link lidar_link
+ros2 run tf2_ros tf2_echo map base_link
+```
+
+#### tmux session usage
+Use `Ctrl+b` followed by `0`/`1`/`2` to switch between the 3 sub-windows.
+```bash
+Ctrl+b, d # Detach from session
+Ctrl+b, c # Create a new tab
+tmux attach -t lg # Re-attach to the session
+tmux kill-session -t lg # Kill the session
+```
+If the session is disconnected due to network lag, you can attach to this session again. After MobaXterm reconnecting, in `su` mode run `tmux attach -t lg`.
+
+### Check the result
+#### log pose and velocity
+Trun on `system.pub_odom` and `ros2 topic echo /lightning/nav_state` to list position, attitude quaternion and velocity.
+
+Also you can run `ros2 service call /lightning/save_path lightning/srv/SavePath` any time to save a TUM style trajectory.
+
+#### rviz2 for Real-time Visualization
+Although the original Pangolin interface is more efficient, rviz2 visualization is also provided.
+
+The rviz display :
+- tf, `map->lidar_link`
+- Odometry, `/lightning/odom`
+- PointCloud2-currentScan, `/current_scan_cloud`
+- PointCloud2-globalMap, `/global_map_cloud`
+- Path: `/lightning/path`
+The currentScan is transformed to the global 'map' frame and processed by Undistortion and Downsampling.  For SLAM mode, the globalMap is updated by KeyFrame updating. For Localization mode, the global map is set by the input file, which remains constant during online operation.
+
+Note in original SLAM mode, default `pub_tf` is off.
+
+```bash
+rviz2 -d src/lightning-lm/config/showbodypc.rviz
+```
+If `system.pub_tf: true`, the `/lightning/odom` odometry topic will be visible here.
+
+
+When using localization mode, visualization:
 ```bash
 rviz2 -d src/lightning-lm/config/showglobalmap.rviz
 ```
+
+
+### Mapping mode configuration
+The following options are added, with respect to the original version:
+1. Print or publish localization results and odometry messages.
+2. Optionally publish keyframe point clouds.
+```yaml
+system:
+  log_pose_opt: false               # Print pos/vel directly to terminal
+  pub_odom: true                    # Publish odometry topic
+  enable_lidar_loc_rviz: false      # Enable RViz point cloud publishing
+  rviz_current_scan_topic: "/current_scan_cloud"
+  rviz_global_map_topic: "/global_map_cloud"
+  enable_path_rviz: true            
+  pub_tf: true                      
+```
+
+### Localization mode configuration
+Firstly check the map_path is correct. If you need to manually set another initial pose, use the following in the config:
+```yaml
+system:
+  map_path: ./data/new_map/
+  use_init_pose: true
+  init_pos: [0.0, 0.0, 0.0]         # Initial position in the point cloud [x, y, z]
+  init_quat: [0.0, 0.0, 0.0, 1.0]   # Initial quaternion relative to the global map [x, y, z, w]
+```
+
+### Recodring bags
+
+taskset -c 4,5,6,7 chrt 90 ros2 bag record -o lio260310 /tf /IMU /LIDAR/POINTS

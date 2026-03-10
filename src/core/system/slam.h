@@ -15,6 +15,7 @@
 
 #include "lightning/msg/nav_state.hpp"
 #include "lightning/srv/save_map.hpp"
+#include "lightning/srv/save_path.hpp"
 #include "livox_ros_driver2/msg/custom_msg.hpp"
 
 #include "common/eigen_types.h"
@@ -49,9 +50,10 @@ class SlamSystem {
         bool with_loop_closing_ = true;     // 是否需要回环检测
         bool with_visualization_ = true;    // 是否需要可视化UI
         bool with_2dvisualization_ = true;  // 是否需要2D可视化UI
-        bool with_rviz_visualization_ = false; // 是否需要RViz可视化
         bool pub_odom_ = false;             // 是否发布Odometry
         bool pub_tf_ = false;               // 是否需要发布TF
+        bool enable_lidar_rviz_ = false; // 是否需要RViz可视化点云
+        bool enable_path_rviz_ = false;      // 是否发布Path
 
         bool step_on_kf_ = true;  // 是否在关键帧处暂停p
         bool log_pose_opt_ = false; // 是否打印位姿和速度
@@ -85,11 +87,13 @@ class SlamSystem {
    private:
     /// ros端保存地图的实现
     void SaveMap(const SaveMapService::Request::SharedPtr request, SaveMapService::Response::SharedPtr response);
+    void SavePath(const srv::SavePath::Request::SharedPtr request, srv::SavePath::Response::SharedPtr response);
 
     Options options_;
     std::atomic_bool running_ = false;
 
     rclcpp::Service<SaveMapService>::SharedPtr savemap_service_ = nullptr;
+    rclcpp::Service<srv::SavePath>::SharedPtr savepath_service_ = nullptr;
 
     std::string map_name_;  // 地图名
 

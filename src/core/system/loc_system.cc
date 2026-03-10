@@ -2,6 +2,9 @@
 // Created by xiang on 25-9-12.
 //
 
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include "core/system/loc_system.h"
 #include "core/localization/localization.h"
 #include "core/localization/lidar_loc/lidar_loc.h"
@@ -96,6 +99,13 @@ bool LocSystem::Init(const std::string &yaml_path) {
         cloud_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>(scan_topic, 10);
         global_map_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("lightning/global_map", 1);
     }
+    if(yaml.GetValue<bool>("system", "enable_path_rviz", false)) {
+        path_pub_ = node_->create_publisher<nav_msgs::msg::Path>("lightning/path", 10);
+    }
+
+    savepath_service_ = node_->create_service<srv::SavePath>(
+        "lightning/save_path", [this](const srv::SavePath::Request::SharedPtr req,
+                                      srv::SavePath::Response::SharedPtr res) { SavePath(req, res); });
 
     bool ret = loc_->Init(yaml_path, map_path);
     if (ret) {
@@ -172,7 +182,16 @@ void LocSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr &clo
                 odom.twist.twist.linear = ns.velocity;
                 odom_pub_->publish(odom);
             }
+            if(options_.pub_tf_ &&  path_pub_ != nullptr) {
+                geometry_msgs::msg::PoseStamped ps;
+                ps.header = ns.header;
+                ps.pose = ns.pose;
+                path_.header = ns.header;
+                path_.poses.push_back(ps);
+                path_pub_->publish(path_);
+            }
         }
+
 
         if (options_.pub_tf_ && cloud_pub_ != nullptr) {
             auto scan_world = loc_->GetLIO()->GetScanDownWorld();
@@ -255,8 +274,16 @@ void LocSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr 
                 odom.twist.twist.linear = ns.velocity;
                 odom_pub_->publish(odom);
             }
-
+            if(options_.pub_tf_ &&  path_pub_ != nullptr) {
+                geometry_msgs::msg::PoseStamped ps;
+                ps.header = ns.header;
+                ps.pose = ns.pose;
+                path_.header = ns.header;
+                path_.poses.push_back(ps);
+                path_pub_->publish(path_);
+            }
         }
+
 
         if (options_.pub_tf_ && cloud_pub_ != nullptr) {
             auto scan_world = loc_->GetLIO()->GetScanDownWorld();
@@ -289,6 +316,38 @@ void LocSystem::Spin() {
     if (node_ != nullptr) {
         spin(node_);
     }
+}
+
+// ros服务回调，保存轨迹
+// 如果请求里没有指定路径，则默认保存在./data/下，文件名为path_年月日时分秒.txt
+// ros2 service call /lightning/save_path lightning/srv/SavePath "{file_path: 'data/traj.txt'}"
+void LocSystem::SavePath(const srv::SavePath::Request::SharedPtr request, srv::SavePath::Response::SharedPtr response) {
+    std::string save_path = request->file_path;
+    if (save_path.empty()) {
+        char time_str[64];
+        time_t now = time(nullptr);
+        strftime(time_str, sizeof(time_str), "%Y%m%d_%H%M%S", localtime(&now));
+        save_path = "./data/path_" + std::string(time_str) + ".txt";
+    }
+
+    std::ofstream file(save_path);
+    if (!file.is_open()) {
+        response->success = false;
+        response->message = "Failed to open file: " + save_path;
+        return;
+    }
+
+    for (const auto& pose : path_.poses) {
+        file << std::fixed << std::setprecision(5) 
+             << pose.header.stamp.sec << "." << std::setfill('0') << std::setw(9) << pose.header.stamp.nanosec << " "
+             << pose.pose.position.x << " " << pose.pose.position.y << " " << pose.pose.position.z << " "
+             << pose.pose.orientation.x << " " << pose.pose.orientation.y << " " 
+             << pose.pose.orientation.z << " " << pose.pose.orientation.w << "\n";
+    }
+
+    file.close();
+    response->success = true;
+    response->message = "Path saved successfully to " + save_path + ". Total poses: " + std::to_string(path_.poses.size());
 }
 
 }  // namespace lightning

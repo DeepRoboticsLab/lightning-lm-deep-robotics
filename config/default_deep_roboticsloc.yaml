@@ -52,7 +52,8 @@ system:
   log_pose_opt: false # 命令行打印位置和速度
   pub_odom: true
   enable_lidar_loc_skip: false
-  enable_lidar_loc_rviz: true
+  enable_lidar_loc_rviz: false
+  enable_path_rviz: true
   enable_lidar_odom_skip: false
   evaluation: false
   lidar_loc_skip_num: 4
