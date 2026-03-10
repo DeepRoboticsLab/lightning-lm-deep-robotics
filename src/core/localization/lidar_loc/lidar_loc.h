@@ -104,6 +104,8 @@ class LidarLoc {
     /// @brief 激光定位重置接口
     void ResetLastPose(const SE3& last_pose);
 
+    std::shared_ptr<TiledMap> GetMap() { return map_; }
+
     /**
      * @brief 激光地图匹配
      * @param pose       预测位姿

@@ -5,11 +5,14 @@
 #ifndef LIGHTNING_LOC_SYSTEM_H
 #define LIGHTNING_LOC_SYSTEM_H
 
-#include <tf2_ros/transform_broadcaster.h>
+#include <nav_msgs/msg/odometry.hpp>
+// #include <nav_msgs/msg/path.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
+#include <tf2_ros/transform_broadcaster.h>
 
+#include "lightning/msg/nav_state.hpp"
 #include "livox_ros_driver2/msg/custom_msg.hpp"
 
 #include "common/eigen_types.h"
@@ -25,7 +28,11 @@ class Localization;
 class LocSystem {
    public:
     struct Options {
-        bool pub_tf_ = true;  // 是否发布tf
+        bool pub_tf_ = true;    // 是否发布tf
+        bool pub_odom_ = true;  // 是否发布nav_state和odometry
+        bool log_pose_opt_ = false;  // 是否打印位姿
+        bool use_init_pose_ = false; // 是否使用初始位姿
+        SE3 init_pose_;              // 初始位姿
     };
 
     explicit LocSystem(Options options);
@@ -58,6 +65,13 @@ class LocSystem {
     /// 实时模式下的ros2 node, subscribers
     rclcpp::Node::SharedPtr node_;
     std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_ = nullptr;
+    rclcpp::Publisher<msg::NavState>::SharedPtr nav_state_pub_ = nullptr;
+    rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_ = nullptr;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_pub_ = nullptr;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr global_map_pub_ = nullptr;
+
+    double last_map_pub_time_ = 0;
+    // nav_msgs::msg::Path path_;
 
     std::string imu_topic_;
     std::string cloud_topic_;

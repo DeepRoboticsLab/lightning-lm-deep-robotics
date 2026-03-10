@@ -270,55 +270,20 @@ void SlamSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr& cl
     if (options_.log_pose_opt_) {
         auto state = lio_->GetState();
         auto q = state.rot_.unit_quaternion();
-        LOG(INFO) << "pose: " << state.pos_.transpose() << "\tq: " << q.coeffs().transpose() << "\tvelocity: " << state.vel_.transpose();
+        
+        char log_buf[256];
+        snprintf(log_buf, sizeof(log_buf), 
+                "pose: [%.4f, %.4f, %.4f]\tq: [%.4f, %.4f, %.4f, %.4f]\tvelocity: [%.3f, %.3f, %.3f]m/s",
+                state.pos_.x(), state.pos_.y(), state.pos_.z(),
+                q.x(), q.y(), q.z(), q.w(),
+                state.vel_.x(), state.vel_.y(), state.vel_.z());
+        LOG(INFO) << log_buf;
 
-        // printf("\rslam.cc:266] pose: [%.3f, %.3f, %.3f], q: [%.3f, %.3f, %.3f, %.3f], vel: [%.3f, %.3f, %.3f]           ", 
+        // printf("\rslam.cc:266] pose: [%.4f, %.4f, %.4f], q: [%.4f, %.4f, %.4f, %.4f], vel: [%.4f, %.4f, %.4f]           ", 
         //        state.pos_.x(), state.pos_.y(), state.pos_.z(),
         //        q.w(), q.x(), q.y(), q.z(),
         //        state.vel_.x(), state.vel_.y(), state.vel_.z());
         // fflush(stdout);
-    }
-
-    if (options_.with_rviz_visualization_ && cloud_pub_ != nullptr) {
-        auto cloud_undistort = lio_->GetScanUndist();
-        if (cloud_undistort) {
-            sensor_msgs::msg::PointCloud2 ros_cloud;
-            pcl::toROSMsg(*cloud_undistort, ros_cloud);
-            ros_cloud.header.frame_id = "map";
-            ros_cloud.header.stamp = node_->now();
-            cloud_pub_->publish(ros_cloud);
-        }
-    }
-
-    auto kf = lio_->GetKeyframe();
-    if (kf != cur_kf_) {
-        cur_kf_ = kf;
-    } else {
-        return;
-    }
-
-    if (cur_kf_ == nullptr) {
-        return;
-    }
-
-    if (options_.with_loop_closing_) {
-        lc_->AddKF(cur_kf_);
-    }
-
-    if (options_.with_gridmap_) {
-        g2p5_->PushKeyframe(cur_kf_);
-    }
-
-    if (ui_) {
-        ui_->UpdateKF(cur_kf_);
-    }
-
-    if (cloud_pub_ != nullptr) {
-        sensor_msgs::msg::PointCloud2 ros_cloud;
-        pcl::toROSMsg(*cur_kf_->GetCloud(), ros_cloud);
-        ros_cloud.header.frame_id = "map";
-        ros_cloud.header.stamp = node_->now();
-        cloud_pub_->publish(ros_cloud);
     }
 
     if (nav_state_pub_ != nullptr) {
@@ -361,7 +326,7 @@ void SlamSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr& cl
             odom_pub_->publish(odom);
         }
 
-        if (path_pub_ != nullptr) {
+        if (options_.with_rviz_visualization_ && path_pub_ != nullptr) {
             geometry_msgs::msg::PoseStamped ps;
             ps.header = ns.header;
             ps.pose = ns.pose;
@@ -371,19 +336,50 @@ void SlamSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr& cl
         }
     }
 
-    if (map_pub_ != nullptr) {
-        global_map_clouds_[cur_kf_->GetID()] = cur_kf_->GetCloud();
-        
-        CloudPtr global_map(new PointCloudType);
-        for (const auto& kf_cloud : global_map_clouds_) {
-            *global_map += *kf_cloud.second;
+    if (options_.with_rviz_visualization_ && cloud_pub_ != nullptr) {
+        auto scan_world = lio_->GetScanDownWorld();
+        if (scan_world && !scan_world->empty()) {
+            sensor_msgs::msg::PointCloud2 scan_msg;
+            pcl::toROSMsg(*scan_world, scan_msg);
+            scan_msg.header.frame_id = "map";
+            scan_msg.header.stamp = cloud->header.stamp;
+            cloud_pub_->publish(scan_msg);
         }
+    }
 
-        sensor_msgs::msg::PointCloud2 ros_map;
-        pcl::toROSMsg(*global_map, ros_map);
-        ros_map.header.frame_id = "map";
-        ros_map.header.stamp = node_->now();
-        map_pub_->publish(ros_map);
+    auto kf = lio_->GetKeyframe();
+    if (kf != cur_kf_) {
+        cur_kf_ = kf;
+    } else {
+        return;
+    }
+
+    if (cur_kf_ == nullptr) {
+        return;
+    }
+
+    if (options_.with_loop_closing_) {
+        lc_->AddKF(cur_kf_);
+    }
+
+    if (options_.with_gridmap_) {
+        g2p5_->PushKeyframe(cur_kf_);
+    }
+
+    if (ui_) {
+        ui_->UpdateKF(cur_kf_);
+    }
+
+    if (map_pub_ != nullptr) {
+        static int kf_count = 0;
+        if (kf_count++ % 3 == 0) { // 每3个关键帧发布一个全局地图
+            auto global_map = lio_->GetGlobalMap(!options_.with_loop_closing_);
+            sensor_msgs::msg::PointCloud2 ros_map;
+            pcl::toROSMsg(*global_map, ros_map);
+            ros_map.header.frame_id = "map";
+            ros_map.header.stamp = node_->now();
+            map_pub_->publish(ros_map);
+        }
     }
 }
 
@@ -398,55 +394,20 @@ void SlamSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr
     if (options_.log_pose_opt_) {
         auto state = lio_->GetState();
         auto q = state.rot_.unit_quaternion();
-        LOG(INFO) << "pose: " << state.pos_.transpose() << "\tq: " << q.coeffs().transpose() << "\tvelocity: " << state.vel_.transpose();
+        
+        char log_buf[256];
+        snprintf(log_buf, sizeof(log_buf), 
+                "pose: [%.4f, %.4f, %.4f]\tq: [%.4f, %.4f, %.4f, %.4f]\tvelocity: [%.3f, %.3f, %.3f]m/s",
+                state.pos_.x(), state.pos_.y(), state.pos_.z(),
+                q.x(), q.y(), q.z(), q.w(),
+                state.vel_.x(), state.vel_.y(), state.vel_.z());
+        LOG(INFO) << log_buf;
 
-        // printf("\rslam.cc:374] pose: [%.3f, %.3f, %.3f], q: [%.3f, %.3f, %.3f, %.3f], vel: [%.3f, %.3f, %.3f]           ", 
+        // printf("\rslam.cc:374] pose: [%.4f, %.4f, %.4f], q: [%.4f, %.4f, %.4f, %.4f], vel: [%.4f, %.4f, %.4f]           ", 
         //        state.pos_.x(), state.pos_.y(), state.pos_.z(),
         //        q.w(), q.x(), q.y(), q.z(),
         //        state.vel_.x(), state.vel_.y(), state.vel_.z());
         // fflush(stdout);
-    }
-
-    if (options_.with_rviz_visualization_ && cloud_pub_ != nullptr) {
-        auto cloud_undistort = lio_->GetScanUndist();
-        if (cloud_undistort) {
-            sensor_msgs::msg::PointCloud2 ros_cloud;
-            pcl::toROSMsg(*cloud_undistort, ros_cloud);
-            ros_cloud.header.frame_id = "map";
-            ros_cloud.header.stamp = node_->now();
-            cloud_pub_->publish(ros_cloud);
-        }
-    }
-
-    auto kf = lio_->GetKeyframe();
-    if (kf != cur_kf_) {
-        cur_kf_ = kf;
-    } else {
-        return;
-    }
-
-    if (cur_kf_ == nullptr) {
-        return;
-    }
-
-    if (options_.with_loop_closing_) {
-        lc_->AddKF(cur_kf_);
-    }
-
-    if (options_.with_gridmap_) {
-        g2p5_->PushKeyframe(cur_kf_);
-    }
-
-    if (ui_) {
-        ui_->UpdateKF(cur_kf_);
-    }
-
-    if (cloud_pub_ != nullptr) {
-        sensor_msgs::msg::PointCloud2 ros_cloud;
-        pcl::toROSMsg(*cur_kf_->GetCloud(), ros_cloud);
-        ros_cloud.header.frame_id = "map";
-        ros_cloud.header.stamp = node_->now();
-        cloud_pub_->publish(ros_cloud);
     }
 
     if (nav_state_pub_ != nullptr) {
@@ -489,7 +450,7 @@ void SlamSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr
             odom_pub_->publish(odom);
         }
 
-        if (path_pub_ != nullptr) {
+        if (options_.with_rviz_visualization_ && path_pub_ != nullptr) {
             geometry_msgs::msg::PoseStamped ps;
             ps.header = ns.header;
             ps.pose = ns.pose;
@@ -499,19 +460,50 @@ void SlamSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr
         }
     }
 
-    if (map_pub_ != nullptr) {
-        global_map_clouds_[cur_kf_->GetID()] = cur_kf_->GetCloud();
-        
-        CloudPtr global_map(new PointCloudType);
-        for (const auto& kf_cloud : global_map_clouds_) {
-            *global_map += *kf_cloud.second;
+    if (options_.with_rviz_visualization_ && cloud_pub_ != nullptr) {
+        auto scan_world = lio_->GetScanDownWorld();
+        if (scan_world && !scan_world->empty()) {
+            sensor_msgs::msg::PointCloud2 scan_msg;
+            pcl::toROSMsg(*scan_world, scan_msg);
+            scan_msg.header.frame_id = "map";
+            scan_msg.header.stamp = cloud->header.stamp;
+            cloud_pub_->publish(scan_msg);
         }
+    }
 
-        sensor_msgs::msg::PointCloud2 ros_map;
-        pcl::toROSMsg(*global_map, ros_map);
-        ros_map.header.frame_id = "map";
-        ros_map.header.stamp = node_->now();
-        map_pub_->publish(ros_map);
+    auto kf = lio_->GetKeyframe();
+    if (kf != cur_kf_) {
+        cur_kf_ = kf;
+    } else {
+        return;
+    }
+
+    if (cur_kf_ == nullptr) {
+        return;
+    }
+
+    if (options_.with_loop_closing_) {
+        lc_->AddKF(cur_kf_);
+    }
+
+    if (options_.with_gridmap_) {
+        g2p5_->PushKeyframe(cur_kf_);
+    }
+
+    if (ui_) {
+        ui_->UpdateKF(cur_kf_);
+    }
+
+    if (map_pub_ != nullptr) {
+        static int kf_count_livox = 0;
+        if (kf_count_livox++ % 3 == 0) { // 每3个关键帧发布一个全局地图
+            auto global_map = lio_->GetGlobalMap(!options_.with_loop_closing_);
+            sensor_msgs::msg::PointCloud2 ros_map;
+            pcl::toROSMsg(*global_map, ros_map);
+            ros_map.header.frame_id = "map";
+            ros_map.header.stamp = node_->now();
+            map_pub_->publish(ros_map);
+        }
     }
 }
 

@@ -45,18 +45,24 @@ g2p5:
 
 system:
   with_loop_closing: true # 是否需要回环检测
-  with_ui: true # 是否需要3D UI
+  with_ui: false # 是否需要3D UI
   with_2dui: false # 是否需要2D UI
   with_g2p5: true # 是否需要栅格地图
   step_on_kf: false # 是否在关键帧处暂停
-
+  log_pose_opt: false # 命令行打印位置和速度
+  pub_odom: true
   enable_lidar_loc_skip: false
   enable_lidar_loc_rviz: true
   enable_lidar_odom_skip: false
   evaluation: false
   lidar_loc_skip_num: 4
   lidar_odom_skip_num: 2
-  map_path: ./data/new_map/
+  map_path: ./data/office4f/
+  use_init_pose: true
+  # 初始位置 [x, y, z]
+  init_pos: [0.0, 0.0, 0.0]
+  # 初始四元数 [x, y, z, w]
+  init_quat: [0.0, 0.0, 0.0, 1.0]
   pub_tf: true
 
 loop_closing:

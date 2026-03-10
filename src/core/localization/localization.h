@@ -70,6 +70,12 @@ class Localization {
     /// 结束，保存临时地图
     void Finish();
 
+    /// 获取激光的状态
+    NavState GetState() const { return lio_->GetState(); }
+
+    std::shared_ptr<LaserMapping> GetLIO() { return lio_; }
+    std::shared_ptr<LidarLoc> GetLidarLoc() { return lidar_loc_; }
+
     /// 异步处理函数
     void LidarOdomProcCloud(CloudPtr);
     void LidarLocProcCloud(CloudPtr);

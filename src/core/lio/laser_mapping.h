@@ -92,6 +92,8 @@ class LaserMapping {
     }
 
     CloudPtr GetScanUndist() const { return scan_undistort_; }
+    CloudPtr GetScanDownWorld() const { return scan_down_world_; }
+    pcl::VoxelGrid<PointType>& GetVoxelFilter() { return voxel_scan_; }
 
     /// 获取最新的点云
     CloudPtr GetRecentCloud();
