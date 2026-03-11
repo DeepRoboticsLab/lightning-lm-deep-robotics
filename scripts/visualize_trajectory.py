@@ -53,7 +53,7 @@ def plot_trajectory(file_path):
 if __name__ == "__main__":
     # Get current script directory to resolve relative paths if needed
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    # Assuming the script is in src/lightning-lm/scripts, and data is in workspace root
+    # Assuming the script is in src/lightning-lm-deep-robotics/scripts, and data is in workspace root
     workspace_root = os.path.abspath(os.path.join(current_dir, "../../.."))
 
     if len(sys.argv) < 2:

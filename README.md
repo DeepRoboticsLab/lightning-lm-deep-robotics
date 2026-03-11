@@ -7,10 +7,13 @@ This guide outlines the specific steps, configurations, and commands required to
 Before deploying on the physical robot, it is highly recommended to obtain the code and test the algorithm using the provided dataset.
 
 ### Clone the Repository
-Start by cloning the Deep Robotics specific version of the repository:
+Start by cloning the Deep Robotics specific version of the repository, to your workspace source folder:
 ```bash
-git clone https://github.com/DeepRoboticsLab/lightning-lm-deep-robotics.git
-cd lightning-lm-deep-robotics
+git clone https://github.com/DeepRoboticsLab/lightning-lm-deep-robotics.git src/
+```
+and copy/link the scripts to current workspace folder:
+```bash
+ln -s src/lightning-lm-deep-robotics/*.sh ./
 ```
 
 ### M20 Dataset
@@ -157,11 +160,11 @@ ros2 run lightning run_loc_offline --config ./src/lightning-lm-deep-robotics/con
 ```
 
 ## 6. M20 Hardware Deployment
-We test on the AOS platform, which has ROS2_foxy already.
+We test on the AOS(103) platform, which has ROS2_foxy already.
 
 ### 6.1 Hardware Configuration
 #### 6.1.1 Networking
-Connect the AOS host to the network.
+Connect the AOS(103) host to the network.
 Modify `vim /etc/NetworkManager/NetworkManager.conf` and delete `unmanaged-devices` and all the `[keyfile]` section and reboot.
 
 Running `nmcli d wifi list` should then display all available WiFi networks.
@@ -171,12 +174,20 @@ Set the name and connect using:
 To maintain a continuous rviz display while the robot is moving, ensure a persistent WiFi connection between your computer and the M20 robot. is maintained.
 
 #### 6.1.2 Point Cloud Permissions
-Enable the service on the NOS host and select the `user` account.
+Enable the service on the NOS(106) host and select the `user` account.
 ```bash
 ssh user@10.21.31.106
-user@host.v1.4:~$ systemctl start multicast-relay.service
+sudo systemctl start multicast-relay.service
 ```
-Once complete, switch to the target host, enter `su` mode, and check the point cloud:
+To check status:
+```bash
+sudo systemctl status multicast-relay.service
+```
+Or just enable auto service, so next time restart robot it works permernatly:
+```bash
+sudo systemctl enable multicast-relay.service
+```
+Once complete, switch to the AOS(103), enter `su` mode, password is '(a single comma), and check the point cloud:
 ```bash
 source /opt/robot/scripts/setup_ros2.sh
 ros2 topic hz /LIDAR/POINTS
@@ -186,7 +197,7 @@ These steps are required for each SLAM try, in other words, always check LiDAR t
 ### 6.2 Preparation
 #### 6.2.1 Dependencies
 
-Follow **Steps 1–4** from the [Build Instructions](#step-4-build-lightning-lm) section above. On M20, use the Low Memory Build in Step 4.
+Follow **Steps 1–4** from the [Build Instructions](#step-4-build-lightning-lm) section above.  On M20, transfer the code to the robot using scp and use the Low Memory Build in Step 4.
 
 > **Note:** On M20 the ROS 2 distro is Foxy — replace `ros-humble-pcl-conversions` with `ros-foxy-pcl-conversions` in the apt install command, and source `/opt/ros/foxy/setup.bash` instead of humble.
 
@@ -242,7 +253,7 @@ Also you can run `ros2 service call /lightning/save_path lightning/srv/SavePath 
 
 Then you can use Python's matplotlib to visualize the path:
 ```bash
-python3 src/lightning-lm/scripts/visualize_trajectory.py data/traj.txt
+python3 src/lightning-lm-deep-robotics/scripts/visualize_trajectory.py data/traj.txt
 ```
 
 ## 8. Localization test
@@ -331,7 +342,7 @@ If the session is disconnected due to network failure, you can attach to this se
 ### 9.5 rviz2 instructions for Real-time Visualization
 Although the original Pangolin interface is more efficient, rviz2 visualization is also provided.
 
-The rviz display :
+The rviz display:
 - tf, `map->lidar_link`
 - Odometry, `/lightning/odom`
 - PointCloud2-currentScan, `/current_scan_cloud`
@@ -340,12 +351,14 @@ The rviz display :
 
 The currentScan is transformed to the global 'map' frame and processed by Undistortion and Downsampling.  For SLAM mode, the globalMap is updated by KeyFrame updating. For Localization mode, the global map is set by the input file, which remains constant during online operation. The latter ones are not published every second.
 
+Note: rviz2 works on MobaXterm, not on VSCode.
+
 #### 9.5.1 Reconnected rviz2
 If the network connection is interrupted due to a failure and the next time reconnected, you can restart RViz2 as follows:
 ```bash
 source /opt/robot/scripts/setup_ros2.sh
 pkill -f rviz2
-rviz2 -d src/lightning-lm/config/showbodypc.rviz
+rviz2 -d src/lightning-lm-deep-robotics/config/showbodypc.rviz
 ```
 
 

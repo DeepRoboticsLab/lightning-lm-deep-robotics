@@ -17,7 +17,7 @@ tmux send-keys -t loc:1 "$ros2sh && rviz2 -d src/lightning-lm-deep-robotics/conf
 
 # Tab 2: Check node info, save map service
 tmux new-window -t loc:2 -n 'node_info'
-tmux send-keys -t loc:2 "$ros2sh && ros2 topic echo /lightning/nav_state" C-m
+tmux send-keys -t loc:2 "$ros2sh && sleep 5 && ros2 topic echo /lightning/nav_state" C-m
 
 tmux new-window -t loc:3 -n 'node_info'
 tmux send-keys -t loc:3 "$ros2sh && exec bash" C-m
