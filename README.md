@@ -186,7 +186,7 @@ These steps are required for each SLAM try, in other words, always check LiDAR t
 ### 6.2 Preparation
 #### 6.2.1 Dependencies
 
-Follow **Steps 1–4** from the [Build Instructions](#2-build-instructions) section above. On M20, use the Low Memory Build in Step 4.
+Follow **Steps 1–4** from the [Build Instructions](#step-4-build-lightning-lm) section above. On M20, use the Low Memory Build in Step 4.
 
 > **Note:** On M20 the ROS 2 distro is Foxy — replace `ros-humble-pcl-conversions` with `ros-foxy-pcl-conversions` in the apt install command, and source `/opt/ros/foxy/setup.bash` instead of humble.
 
@@ -211,18 +211,18 @@ Make sure:
 So that we use `run_slam_online` node.
 
 
-### 7.1 using tmux to switch between tabs to monitor the program
-To facilitate debugging in the terminal, one key staertup by running: 
+### 7.1 One-command Launch
+To monitor the SLAM program in one single remote terminal, use the following command to launch 4 tmux windows at once: 
 ```bash
 ./start_lg_rviz_session.sh
 ```
-this use tmux to open 4 windows in a session named `lg`. Switch between windows using `Ctrl+b n`, check if all commands works, if not,  re-enter the corresponding commands as the following section.
+This opens a session named `lg`. Switch between windows using `Ctrl+b n`. If a command fails, you can manually re-enter it as described in the next section.
 
-Further instructions on tmux see [9.4 tmux session usage](#94-tmux-session-usage)
+Further instructions see [tmux session usage](#94-tmux-session-usage)
 
-### 7.2 start SLAM/Loc online
+### 7.2 Manual Startup (Step-by-Step)
 
-Mapping mode, you need at least 4 windows to each typing these commands.
+Mapping mode requires at least 4 windows to run each component:
 ```bash
 ros2 run lightning run_slam_online --config src/lightning-lm-deep-robotics/config/default_deep_roboticsslam.yaml
 
@@ -264,7 +264,7 @@ rviz2 -d src/lightning-lm-deep-robotics/config/showglobalmap.rviz
 ros2 topic echo /lightning/nav_state
 ```
 
-### 8.2 One-key startup
+### 8.2 One-command Launch
 By running: 
 ```bash
 ./sloc_rviz_session.sh
@@ -276,9 +276,11 @@ In this project by default we enable `pub_tf` for rviz2 visualization.
 
 
 ### 9.1 Mapping mode configuration
-The following options are added, with respect to the original version:
-1. Print or publish localization results and odometry messages.
-2. Optionally publish keyframe point clouds.
+For the purpose of:
+1. Print or publish localization state and odometry messages.
+2. Optionally publish mapping result like point clouds and path.
+
+the following options are added in yaml
 ```yaml
 system:
   log_pose_opt: false               # Print pos/vel directly to terminal
@@ -293,7 +295,9 @@ system:
 By default pointcloud is not published. The config file provides basic need for path saving, nav_state logging.
 
 ### 9.2 Localization mode configuration
-Firstly check the map_path is correct when running `loc_online` mode. If you need to manually set another initial pose, use the following in the config:
+Firstly check the map_path is correct when running `loc_online` mode. 
+
+If you need to manually set another initial pose, use the following in the config:
 ```yaml
 system:
   map_path: ./data/office4/
@@ -321,7 +325,7 @@ Ctrl+b, c # Create a new tab
 tmux attach -t lg # Re-attach to the session
 tmux kill-session -t lg # Kill the session
 ```
-If the session is disconnected due to network lag, you can attach to this session again. After MobaXterm reconnecting, in `su` mode run `tmux attach -t lg`.
+If the session is disconnected due to network failure, you can attach to this session again. After MobaXterm reconnecting, in `su` mode run `tmux attach -t lg` will be back to the running program. `Ctrl+b 0` to see the running of SLAM/Loc node.
 
 
 ### 9.5 rviz2 instructions for Real-time Visualization
@@ -334,9 +338,9 @@ The rviz display :
 - PointCloud2-globalMap, `/global_map_cloud`
 - Path: `/lightning/path`
 
-The currentScan is transformed to the global 'map' frame and processed by Undistortion and Downsampling.  For SLAM mode, the globalMap is updated by KeyFrame updating. For Localization mode, the global map is set by the input file, which remains constant during online operation.
+The currentScan is transformed to the global 'map' frame and processed by Undistortion and Downsampling.  For SLAM mode, the globalMap is updated by KeyFrame updating. For Localization mode, the global map is set by the input file, which remains constant during online operation. The latter ones are not published every second.
 
-#### 9.5.1 Reconnect rviz2
+#### 9.5.1 Reconnected rviz2
 If the network connection is interrupted due to a failure and the next time reconnected, you can restart RViz2 as follows:
 ```bash
 source /opt/robot/scripts/setup_ros2.sh
