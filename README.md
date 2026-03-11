@@ -40,7 +40,7 @@ sudo apt remove libgoogle-glog-dev libgoogle-glog0v5
 ### Step 2: Build glog v0.6.0 from Thirdparty
 
 ```bash
-cd src/lightning-lm/thirdparty/glog
+cd src/lightning-lm-deep-robotics/thirdparty/glog
 mkdir build && cd build
 cmake -DBUILD_SHARED_LIBS=ON -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release ..
 make -j$(nproc)
@@ -52,8 +52,7 @@ cd ../../../../..
 ### Step 3: Build Pangolin v0.9.3 from Thirdparty
 
 ```bash
-cd src/lightning-lm/thirdparty
-cd Pangolin
+cd src/lightning-lm-deep-robotics/thirdparty/Pangolin
 mkdir build && cd build
 cmake -DBUILD_EXAMPLES=OFF -DBUILD_TOOLS=OFF -DCMAKE_CXX_FLAGS="-Wno-error" -DCMAKE_BUILD_TYPE=Release ..
 make -j$(nproc)
@@ -83,7 +82,7 @@ Compilation on RK3588 takes approximately 20 minutes.
 ## 3. Configuration
 
 The primary configuration file for the M20 robot is located at:
-`src/lightning-lm/config/default_deep_robotics.yaml`
+`src/lightning-lm-deep-robotics/config/default_deep_robotics.yaml`
 
 **Key Configuration Parameters:**
 *   **LiDAR Type:** Ensure `fasterlio.lidar_type` is set to `4` (RoboSense).
@@ -102,7 +101,7 @@ The primary configuration file for the M20 robot is located at:
 
 2.  **Launch the Online SLAM Node:**
     ```bash
-    ros2 run lightning run_slam_online --config src/lightning-lm/config/default_deep_robotics.yaml
+    ros2 run lightning run_slam_online --config src/lightning-lm-deep-robotics/config/default_deep_robotics.yaml
     ```
 
 3.  **Save the Map:**
@@ -119,7 +118,7 @@ The primary configuration file for the M20 robot is located at:
 
 1.  **Run Offline SLAM:**
     ```bash
-    ros2 run lightning run_slam_offline --input_bag /home/msy/Downloads/m20/lidar_data_bag/lidar_data_bag_0.db3 --config ./src/lightning-lm/config/default_deep_robotics.yaml
+    ros2 run lightning run_slam_offline --input_bag /home/msy/Downloads/m20/lidar_data_bag/lidar_data_bag_0.db3 --config ./src/lightning-lm-deep-robotics/config/default_deep_robotics.yaml
     ```
     *Note: The system automatically saves results to the `data/new_map` directory upon completion.*
 
@@ -148,13 +147,13 @@ The primary configuration file for the M20 robot is located at:
     *   Ensure `system.map_path` in your yaml config points to the folder containing the map (default: `new_map`).
     *   **Run command:**
         ```bash
-        ros2 run lightning run_loc_online --config ./src/lightning-lm/config/default_deep_roboticsloc.yaml
+        ros2 run lightning run_loc_online --config ./src/lightning-lm-deep-robotics/config/default_deep_roboticsloc.yaml
         ```
 
 ### Option B: Offline Localization
 Run localization on a bag file without real-time constraints to verify algorithm performance.
 ```bash
-ros2 run lightning run_loc_offline --config ./src/lightning-lm/config/default_deep_roboticsloc.yaml --input_bag [path_to_bag]
+ros2 run lightning run_loc_offline --config ./src/lightning-lm-deep-robotics/config/default_deep_roboticsloc.yaml --input_bag [path_to_bag]
 ```
 
 ## 6. M20 Hardware Deployment
@@ -209,8 +208,8 @@ To facilitate debugging in the terminal, you can use tmux to open 3 windows by r
 
 #### 7.1.1 Mapping mode
 ```bash
-ros2 run lightning run_slam_online --config src/lightning-lm/config/default_deep_roboticsslam.yaml
-rviz2 -d src/lightning-lm/config/showbodypc.rviz
+ros2 run lightning run_slam_online --config src/lightning-lm-deep-robotics/config/default_deep_roboticsslam.yaml
+rviz2 -d src/lightning-lm-deep-robotics/config/showbodypc.rviz
 ros2 topic echo /lightning/nav_state
 ros2 service call /lightning/save_map lightning/srv/SaveMap "{map_id: 'office4'}"
 ```
@@ -224,8 +223,8 @@ system:
 And verify the point cloud with `pcl_viewer ./data/office4/global.pcl`.
 
 ```bash
-ros2 run lightning run_loc_online --config src/lightning-lm/config/default_deep_roboticsloc.yaml
-rviz2 -d src/lightning-lm/config/showglobalmap.rviz
+ros2 run lightning run_loc_online --config src/lightning-lm-deep-robotics/config/default_deep_roboticsloc.yaml
+rviz2 -d src/lightning-lm-deep-robotics/config/showglobalmap.rviz
 ros2 topic echo /lightning/nav_state
 ```
 
@@ -268,14 +267,14 @@ The currentScan is transformed to the global 'map' frame and processed by Undist
 Note in original SLAM mode, default `pub_tf` is off.
 
 ```bash
-rviz2 -d src/lightning-lm/config/showbodypc.rviz
+rviz2 -d src/lightning-lm-deep-robotics/config/showbodypc.rviz
 ```
 If `system.pub_tf: true`, the `/lightning/odom` odometry topic will be visible here.
 
 
 When using localization mode, visualization:
 ```bash
-rviz2 -d src/lightning-lm/config/showglobalmap.rviz
+rviz2 -d src/lightning-lm-deep-robotics/config/showglobalmap.rviz
 ```
 
 

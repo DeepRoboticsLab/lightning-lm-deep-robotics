@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/cleanup_with_absolute_prefix_unittest.dir/src/cleanup_with_absolute_prefix_unittest.cc.o -o cleanup_with_absolute_prefix_unittest  libglogtest.a /usr/lib/x86_64-linux-gnu/libgtest.a /usr/lib/x86_64-linux-gnu/libgflags.so.2.2.2 -lpthread 

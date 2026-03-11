@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/cleanup_immediately_unittest.dir/src/cleanup_immediately_unittest.cc.o -o cleanup_immediately_unittest  libglogtest.a /usr/lib/x86_64-linux-gnu/libgtest.a /usr/lib/x86_64-linux-gnu/libgflags.so.2.2.2 -lpthread 
