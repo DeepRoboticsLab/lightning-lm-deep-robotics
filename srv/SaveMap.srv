@@ -1,4 +1,5 @@
 # 存储地图服务
+# ros2 service call /lightning/save_map lightning/srv/SaveMap "{map_id: 'near0'}"
 # 服务名: /lightning/save_map
 # 启动slam节点后提供
 

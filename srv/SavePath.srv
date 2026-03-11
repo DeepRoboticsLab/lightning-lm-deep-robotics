@@ -1,4 +1,4 @@
-# ros2 service call /lightning/save_path lightning/srv/SavePath
+# ros2 service call /lightning/save_path lightning/srv/SavePath "{file_path: 'data/traj.txt'}"
 string file_path  # 文件保存路径
 ---
 bool success      # 保存是否成功
