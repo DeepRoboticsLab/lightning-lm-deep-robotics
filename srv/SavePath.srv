@@ -1,0 +1,5 @@
+# ros2 service call /lightning/save_path lightning/srv/SavePath
+string file_path  # 文件保存路径
+---
+bool success      # 保存是否成功
+string message    # 错误或成功信息

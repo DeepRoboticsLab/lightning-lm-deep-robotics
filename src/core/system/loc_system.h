@@ -13,6 +13,7 @@
 #include <tf2_ros/transform_broadcaster.h>
 
 #include "lightning/msg/nav_state.hpp"
+#include "lightning/srv/save_path.hpp"
 #include "livox_ros_driver2/msg/custom_msg.hpp"
 
 #include "common/eigen_types.h"
@@ -55,6 +56,9 @@ class LocSystem {
     void Spin();
 
    private:
+    /// 保存轨迹接口
+    void SavePath(const srv::SavePath::Request::SharedPtr request, srv::SavePath::Response::SharedPtr response);
+
     Options options_;
 
     std::shared_ptr<loc::Localization> loc_ = nullptr;  // 定位接口
@@ -70,6 +74,7 @@ class LocSystem {
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_pub_ = nullptr;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr global_map_pub_ = nullptr;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_ = nullptr;
+    rclcpp::Service<srv::SavePath>::SharedPtr savepath_service_ = nullptr;
     double last_map_pub_time_ = 0;
     nav_msgs::msg::Path path_;
 

@@ -15,6 +15,7 @@
 
 #include "lightning/msg/nav_state.hpp"
 #include "lightning/srv/save_map.hpp"
+#include "lightning/srv/save_path.hpp"
 #include "livox_ros_driver2/msg/custom_msg.hpp"
 
 #include "common/eigen_types.h"
@@ -86,11 +87,13 @@ class SlamSystem {
    private:
     /// ros端保存地图的实现
     void SaveMap(const SaveMapService::Request::SharedPtr request, SaveMapService::Response::SharedPtr response);
+    void SavePath(const srv::SavePath::Request::SharedPtr request, srv::SavePath::Response::SharedPtr response);
 
     Options options_;
     std::atomic_bool running_ = false;
 
     rclcpp::Service<SaveMapService>::SharedPtr savemap_service_ = nullptr;
+    rclcpp::Service<srv::SavePath>::SharedPtr savepath_service_ = nullptr;
 
     std::string map_name_;  // 地图名
 

@@ -252,6 +252,7 @@ If the session is disconnected due to network lag, you can attach to this sessio
 #### 7.3.1 log pose and velocity
 Trun on `system.pub_odom` and `ros2 topic echo /lightning/nav_state` to list position, attitude quaternion and velocity.
 
+Also you can run `ros2 service call /lightning/save_path lightning/srv/SavePath "{file_path: 'data/traj.txt'}" ` any time to save a TUM style trajectory.
 
 #### 7.3.2 rviz2 for Real-time Visualization
 Although the original Pangolin interface is more efficient, rviz2 visualization is also provided.
