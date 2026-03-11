@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/signalhandler_unittest.dir/src/signalhandler_unittest.cc.o -o signalhandler_unittest  libglogtest.a /usr/lib/x86_64-linux-gnu/libgtest.a /usr/lib/x86_64-linux-gnu/libgflags.so.2.2.2 -lpthread 

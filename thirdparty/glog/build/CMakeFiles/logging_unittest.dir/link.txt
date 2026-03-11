@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/logging_unittest.dir/src/logging_unittest.cc.o -o logging_unittest  libglogtest.a /usr/lib/x86_64-linux-gnu/libgtest.a /usr/lib/x86_64-linux-gnu/libgflags.so.2.2.2 -lpthread 

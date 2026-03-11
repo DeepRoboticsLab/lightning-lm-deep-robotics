@@ -1,0 +1,187 @@
+name: Build
+
+on: [push, pull_request]
+
+env:
+  BUILD_TYPE: Release
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, macos-14, windows-2022]
+        shared_libs: ['ON', 'OFF']
+        include:
+        - os: ubuntu-22.04
+          package_manager: "apt"
+
+        - os: ubuntu-24.04
+          package_manager: "apt"
+
+        - os: macos-14
+          package_manager: "brew"
+
+        - os: windows-2022
+          package_manager: "vcpkg"
+
+    steps:
+    - name: Checkout Pangolin
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: "(vcpkg only) Install Microsoft Visual C++"
+      if: ${{ matrix.package_manager == 'vcpkg' }}
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: "(vcpkg only) Restore any cached ports"
+      uses: lukka/run-vcpkg@v11
+      if: ${{ matrix.package_manager == 'vcpkg' }}
+      with:
+        vcpkgDirectory: '${{github.workspace}}/scripts/vcpkg'
+
+    - name: "(vcpkg only) Setup CMake Toolchain file"
+      if: ${{ matrix.package_manager == 'vcpkg' }}
+      run: |
+        export TOOLCHAIN_FILE="${{github.workspace}}/scripts/vcpkg/scripts/buildsystems/vcpkg.cmake"
+        echo "${{github.workspace}}/scripts/vcpkg" >> $GITHUB_PATH
+        echo "TOOLCHAIN_FILE=$TOOLCHAIN_FILE" >> $GITHUB_ENV
+
+    - name: "(brew only) Remove Python symlinks"
+      if: ${{ matrix.package_manager == 'brew' }}
+      run: |
+        rm /usr/local/bin/2to3
+        rm /usr/local/bin/2to3-3.12
+        rm /usr/local/bin/idle3
+        rm /usr/local/bin/idle3.12
+        rm /usr/local/bin/pydoc3
+        rm /usr/local/bin/pydoc3.12
+        rm /usr/local/bin/python3
+        rm /usr/local/bin/python3.12
+        rm /usr/local/bin/python3-config
+        rm /usr/local/bin/python3.12-config
+
+    - name: Install Dependencies
+      env:
+        HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+      run: |
+        echo "vcpkg location: $(which vcpkg)"
+        echo "CMake toolchain file: $TOOLCHAIN_FILE"
+        $GITHUB_WORKSPACE/scripts/install_prerequisites.sh -v -u -m ${{matrix.package_manager}} all
+
+    - name: "(vcpkg only) remove python"
+      if: ${{ matrix.package_manager == 'vcpkg' }}
+      run: |
+        vcpkg remove python3
+
+    - uses: actions/setup-python@v5
+      if: ${{ matrix.package_manager == 'vcpkg' }}
+      with:
+        python-version: '3.12'
+
+    - name: "(vcpkg only) install setuptools"
+      if: ${{ matrix.package_manager == 'vcpkg' }}
+      run: |
+        pip install setuptools wheel
+
+    - name: Configure CMake
+      run: >
+        cmake -G Ninja -B build
+        -D CMAKE_BUILD_TYPE=$BUILD_TYPE
+        -D CMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE"
+        -D BUILD_SHARED_LIBS=${{ matrix.shared_libs }}
+        -D BUILD_TESTS=ON
+
+    - name: Build
+      run: cmake --build build --config $BUILD_TYPE
+
+    - name: Build Python wheel
+      run: cmake --build build -t pypangolin_wheel
+
+    - name: Install Python wheel
+      env:
+        PIP_BREAK_SYSTEM_PACKAGES: 1
+      run: |
+        python -m zipfile --list build/pypangolin-*.whl
+        pip install build/pypangolin-*.whl
+        pip show pypangolin
+
+    - name: Test Python wheel
+      if: ${{ !(matrix.package_manager == 'vcpkg' && matrix.shared_libs == 'ON') }}
+      run: |
+        python -c "import pypangolin"
+
+    - name: Run all tests
+      run: |
+        cmake --build build --target test
+
+    - name: upload wheel file
+      if: ${{ matrix.shared_libs == 'OFF' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: pypangolin_wheel_${{ matrix.os }}
+        if-no-files-found: error
+        path: ./build/pypangolin-*.whl
+
+  emscripten:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout Pangolin
+      uses: actions/checkout@v4
+
+    - name: install build dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y emscripten ninja-build libeigen3-dev catch2
+
+    - name: Configure Pangolin
+      run: emcmake cmake -G Ninja -B pangolin-build -D CMAKE_BUILD_TYPE=$BUILD_TYPE -D BUILD_PANGOLIN_PYTHON=OFF -D Eigen3_DIR=/usr/share/eigen3/cmake/
+
+    - name: Build Pangolin
+      run: cmake --build pangolin-build
+
+    - name: Copy Examples to www folder
+      run: |
+        mkdir -p ${{runner.workspace}}/www/emscripten
+        rsync -zarvm --include="*/" --include="*.html" --include="*.js" --include="*.wasm" --exclude="*" pangolin-build/examples ${{runner.workspace}}/www/emscripten
+
+    - name: Copy README to www folder
+      run: |
+        cp "${{github.workspace}}/README.md" "${{runner.workspace}}/www/index.md"
+
+    - name: Deploy Examples to GitHub Pages (for pushes to master)
+      if: success() && (github.ref == 'refs/heads/master')
+      uses: crazy-max/ghaction-github-pages@v4
+      with:
+        target_branch: gh-pages
+        keep_history: true
+        # build_dir path relative to ${{runner.workspace}}/Pangolin
+        build_dir: ../www
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release:
+    needs: build
+    if: contains(needs.*.result, 'success') && contains(github.ref, '/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: download artifact
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pypangolin_wheel_*
+          merge-multiple: true
+          path: ./
+
+      - name: create release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: pypangolin-*.whl
+          artifactErrorsFailBuild: true
