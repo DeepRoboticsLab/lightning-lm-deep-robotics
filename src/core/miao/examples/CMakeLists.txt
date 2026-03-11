@@ -1,0 +1,7 @@
+add_subdirectory(data_fitting)
+add_subdirectory(icp)
+add_subdirectory(sba)
+add_subdirectory(bal)
+add_subdirectory(sphere)
+add_subdirectory(incremental)
+add_subdirectory(pose_graph)

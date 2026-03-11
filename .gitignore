@@ -1,0 +1,12 @@
+*build
+*install
+*log
+*.vscode
+*libs
+**data
+**/.vscode/
+bin
+*.zip
+**cmake-build-debug**
+**cmake-build-release**
+thirdparty/Pangolin-0.9.3/**

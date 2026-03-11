@@ -1,0 +1,17 @@
+# 定位命令
+# 服务名: /lightning/loc_cmd
+# 用于重定位、设置地图等指令
+
+uint8 CMD_LOC_SET_MAP = 1       # 设置地图
+uint8 CMD_LOC_INIT_POSE = 3     # 设置重定位姿，参数由x y yaw 给出
+uint8 CMD_LOC_INIT_LIST = 4     # 设置重定位点列表，由建图工具设置并保存成队列
+
+uint8 id               # 命令id
+float64 x              # 重定位点坐标x
+float64 y              # 重定位点坐标x
+float64 z              # 重定位点坐标x
+string map_id          # 地图路径
+std_msgs/Header header  # 时间戳
+
+---
+uint32 result           # 为0表示成功
