@@ -53,8 +53,7 @@ cd ../../../../..
 
 ```bash
 cd src/lightning-lm/thirdparty
-unzip Pangolin-0.9.3.zip
-cd Pangolin-0.9.3
+cd Pangolin
 mkdir build && cd build
 cmake -DBUILD_EXAMPLES=OFF -DBUILD_TOOLS=OFF -DCMAKE_CXX_FLAGS="-Wno-error" -DCMAKE_BUILD_TYPE=Release ..
 make -j$(nproc)
