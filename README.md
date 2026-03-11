@@ -72,9 +72,9 @@ source install/setup.bash
 
 **Low memory build** (recommended for on-board computers such as M20/RK3588, to avoid OOM crashes):
 ```bash
-export MAKEFLAGS="-j4"
+export MAKEFLAGS="-j3"
 source /opt/ros/humble/setup.bash
-colcon build --parallel-workers 4 --executor sequential --cmake-args -DCMAKE_BUILD_TYPE=Release
+colcon build --parallel-workers 3 --executor sequential --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
 ```
 Compilation on RK3588 takes approximately 20 minutes.
@@ -157,11 +157,11 @@ ros2 run lightning run_loc_offline --config ./src/lightning-lm-deep-robotics/con
 ```
 
 ## 6. M20 Hardware Deployment
-We test on the AOS platform.
+We test on the AOS(103) platform. Passwords are all '
 
 ### 6.1 Hardware Configuration
 #### 6.1.1 Networking
-Connect the AOS host to the network.
+Connect the AOS(103) host to the network.
 Modify `vim /etc/NetworkManager/NetworkManager.conf` and delete `unmanaged-devices` and all the `[keyfile]` section and reboot.
 
 Running `nmcli d wifi list` should then display all available WiFi networks.
@@ -171,12 +171,20 @@ Set the name and connect using:
 To maintain a continuous rviz display while the robot is moving, ensure a persistent WiFi connection between your computer and the M20 robot. is maintained.
 
 #### 6.1.2 Point Cloud Permissions
-Enable the service on the NOS host and select the `user` account.
+Enable the service on the NOS(106) host and select the `user` account.
 ```bash
 ssh user@10.21.31.106
-user@host.v1.4:~$ systemctl start multicast-relay.service
+sudo systemctl start multicast-relay.service
 ```
-Once complete, switch to the target host, enter `su` mode, and check the point cloud:
+To check status:
+```bash
+sudo systemctl status multicast-relay.service
+```
+To enable auto start:
+```bash
+sudo systemctl enable multicast-relay.service
+```
+Once complete, switch to the AOS(103), enter `su` mode, password is also '(a single comma), and check the point cloud:
 ```bash
 source /opt/robot/scripts/setup_ros2.sh
 ros2 topic hz /LIDAR/POINTS
@@ -186,7 +194,7 @@ These steps are required for each SLAM try, in other words, always check LiDAR t
 ### 6.2 Preparation
 #### 6.2.1 Dependencies
 
-Follow **Steps 1–4** from the [Build Instructions](#2-build-instructions) section above. On M20, use the Low Memory Build in Step 4.
+Follow **Steps 1–4** from the [Build Instructions](#2-build-instructions) section above. On M20, transfer the code to the robot using scp and use the Low Memory Build in Step 4.
 
 > **Note:** On M20 the ROS 2 distro is Foxy — replace `ros-humble-pcl-conversions` with `ros-foxy-pcl-conversions` in the apt install command, and source `/opt/ros/foxy/setup.bash` instead of humble.
 
@@ -305,5 +313,6 @@ system:
 ```
 
 ### 7.6 Recodring bags
-
+```bash
 taskset -c 4,5,6,7 chrt 90 ros2 bag record -o lio260310 /tf /IMU /LIDAR/POINTS
+```
