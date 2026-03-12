@@ -65,10 +65,10 @@ system:
   pub_tf: true
 
 loop_closing:
-  loop_kf_gap: 20       # 每隔多少个关键帧检查一次
+  loop_kf_gap: 10       # 每隔多少个关键帧检查一次
   min_id_interval: 20   # 被检查的关键帧ID间隔
-  closest_id_th: 50     # 历史关键帧与当前帧的ID间隔
-  max_range: 30.0       # 候选帧的最大距离
+  closest_id_th: 30     # 历史关键帧与当前帧的ID间隔
+  max_range: 2.0       # 候选帧的最大距离
   ndt_score_th: 1.0     # ndt位姿分值
 
 
@@ -76,7 +76,7 @@ loop_closing:
 lidar_loc:
   enable_dynamic_polygon: false
   enable_parking_static: true
-  enable_icp_adjust: false
+  enable_icp_adjust: true
   filter_intensity_max: 100.0
   filter_intensity_min: 10.0
   filter_z_max: 30.0
