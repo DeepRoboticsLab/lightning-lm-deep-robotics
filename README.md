@@ -223,9 +223,9 @@ So that we use `run_slam_online` node.
 
 
 ### 7.1 One-command Launch
-To monitor the SLAM program in one single remote terminal, use the following command to launch 4 tmux windows at once: 
+To monitor the SLAM program in one single remote terminal, use the following command to launch 4 tmux windows at once (stay at your workspace folder which is the parent folder of the src folder): 
 ```bash
-./start_lg_rviz_session.sh
+./src/lightning-lm-deep-robotics/start_lg_rviz_session.sh
 ```
 This opens a session named `lg`. Switch between windows using `Ctrl+b n`. If a command fails, you can manually re-enter it as described in the next section.
 
@@ -258,12 +258,12 @@ python3 src/lightning-lm-deep-robotics/scripts/visualize_trajectory.py data/traj
 
 ## 8. Localization test
 We test `run_loc_online` node.
-The procedure is basically the same as SLAM, but you need to ensure the map configuration is correct. Check the pointcloud in map path exists:
+The procedure is basically the same as SLAM, but you need to ensure the map configuration is correct. Check the pointcloud in map path exists in the yaml file you loaded like default_deep_robotics.yaml:
 ```yaml
 system:
   map_path: ./data/office4/
 ```
-And verify the point cloud with `pcl_viewer ./data/office4/global.pcl`.
+And verify the point cloud with `pcl_viewer ./data/office4/global.pcd`.
 
 ### 8.1 start Loc online
 Localiztion mode, you need at least 3 windows to each typing these commands.
@@ -278,7 +278,7 @@ ros2 topic echo /lightning/nav_state
 ### 8.2 One-command Launch
 By running: 
 ```bash
-./sloc_rviz_session.sh
+./src/lightning-lm-deep-robotics/sloc_rviz_session.sh
 ```
 This use tmux to open 4 windows in a session named `loc`, the 4th window is left free, you can try SavePath service.
 
@@ -333,6 +333,7 @@ Use `Ctrl+b` followed by `0`/`1`/`2`/`4` to switch between the 4 sub-windows.
 ```bash
 Ctrl+b, d # Detach from session
 Ctrl+b, c # Create a new tab
+su
 tmux attach -t lg # Re-attach to the session
 tmux kill-session -t lg # Kill the session
 ```
