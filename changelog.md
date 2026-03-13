@@ -91,3 +91,10 @@ Ctrl+b, c # 创建新标签
 tmux attach -t lg # 重新进入
 tmux kill-session -t lg # 删除会话
 ```
+
+### glog
+```bash
+./program > all.log 2>&1
+```
+
+ros2 run lightning run_slam_online --config src/lightning-lm-deep-robotics/config/default_deep_roboticsslam.yaml > all.log 2>&1

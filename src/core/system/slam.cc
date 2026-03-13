@@ -45,14 +45,23 @@ bool SlamSystem::Init(const std::string& yaml_path) {
         options_.enable_path_rviz_ = true; // 发布路径时会包含位姿信息，方便调试
     }
 
-     /// loop closing
-     if (options_.with_loop_closing_) {
-        LOG(INFO) << "slam with loop closing";
-        LoopClosing::Options options;
-        options.online_mode_ = options_.online_mode_;
-        lc_ = std::make_shared<LoopClosing>(options);
-        lc_->Init(yaml_path);
+    if (yaml["system"]["map_path"]) {
+        std::string map_path = yaml["system"]["map_path"].as<std::string>();
+        if (map_path.back() == '/') {
+            map_path.pop_back();
+        }
+        size_t last_slash = map_path.find_last_of('/');
+        if (last_slash != std::string::npos) {
+            map_name_ = map_path.substr(last_slash + 1);
+        } else {
+            map_name_ = map_path;
+        }
+    } else {
+        map_name_ = "new_map";
     }
+    LOG(INFO) << "map name: " << map_name_;
+
+    /// loop closing
     if (options_.with_loop_closing_) {
         LOG(INFO) << "slam with loop closing";
         LoopClosing::Options options;
@@ -172,7 +181,9 @@ SlamSystem::~SlamSystem() {
 }
 
 void SlamSystem::StartSLAM(std::string map_name) {
-    map_name_ = map_name;
+    if (!map_name.empty()) {
+        map_name_ = map_name;
+    }
     running_ = true;
 }
 
@@ -183,38 +194,6 @@ void SlamSystem::SaveMap(const SaveMapService::Request::SharedPtr request,
 
     SaveMap(save_path);
     response->response = 0;
-}
-
-// ros服务回调，保存轨迹
-// 如果请求里没有指定路径，则默认保存在./data/下，文件名为path_年月日时分秒.txt
-// ros2 service call /lightning/save_path lightning/srv/SavePath
-void SlamSystem::SavePath(const srv::SavePath::Request::SharedPtr request, srv::SavePath::Response::SharedPtr response) {
-    std::string save_path = request->file_path;
-    if (save_path.empty()) {
-        char time_str[64];
-        time_t now = time(nullptr);
-        strftime(time_str, sizeof(time_str), "%Y%m%d_%H%M%S", localtime(&now));
-        save_path = "./data/path_" + std::string(time_str) + ".txt";
-    }
-
-    std::ofstream file(save_path);
-    if (!file.is_open()) {
-        response->success = false;
-        response->message = "Failed to open file: " + save_path;
-        return;
-    }
-
-    for (const auto& pose : path_.poses) {
-        file << std::fixed << std::setprecision(5) 
-             << pose.header.stamp.sec << "." << std::setfill('0') << std::setw(9) << pose.header.stamp.nanosec << " "
-             << pose.pose.position.x << " " << pose.pose.position.y << " " << pose.pose.position.z << " "
-             << pose.pose.orientation.x << " " << pose.pose.orientation.y << " " 
-             << pose.pose.orientation.z << " " << pose.pose.orientation.w << "\n";
-    }
-
-    file.close();
-    response->success = true;
-    response->message = "Path saved successfully to " + save_path + ". Total poses: " + std::to_string(path_.poses.size());
 }
 
 void SlamSystem::SaveMap(const std::string& path) {
@@ -304,6 +283,49 @@ void SlamSystem::SaveMap(const std::string& path) {
 
     LOG(INFO) << "map saved";
 }
+
+// ros服务回调，保存轨迹
+// 如果请求里没有指定路径，则默认保存在./data/下，文件名为path_年月日时分秒.txt
+// ros2 service call /lightning/save_path lightning/srv/SavePath
+void SlamSystem::SavePath(const srv::SavePath::Request::SharedPtr request, srv::SavePath::Response::SharedPtr response) {
+    std::string save_path = request->file_path;
+    bool success = SavePath(save_path);
+    response->success = success;
+    if (success) {
+        response->message = "Path saved successfully. Total poses: " + std::to_string(path_.poses.size());
+    } else {
+        response->message = "Failed to save path.";
+    }
+}
+
+bool SlamSystem::SavePath(const std::string& path) {
+    std::string save_path = path;
+    if (save_path.empty()) {
+        char time_str[64];
+        time_t now = time(nullptr);
+        strftime(time_str, sizeof(time_str), "%Y%m%d_%H%M%S", localtime(&now));
+        save_path = "./data/path_" + std::string(time_str) + ".txt";
+    }
+
+    std::ofstream file(save_path);
+    if (!file.is_open()) {
+        LOG(ERROR) << "Failed to open file: " << save_path;
+        return false;
+    }
+
+    for (const auto& pose : path_.poses) {
+        file << std::fixed << std::setprecision(5) 
+             << pose.header.stamp.sec << "." << std::setfill('0') << std::setw(9) << pose.header.stamp.nanosec << " "
+             << pose.pose.position.x << " " << pose.pose.position.y << " " << pose.pose.position.z << " "
+             << pose.pose.orientation.x << " " << pose.pose.orientation.y << " " 
+             << pose.pose.orientation.z << " " << pose.pose.orientation.w << "\n";
+    }
+
+    file.close();
+    LOG(INFO) << "Path saved to " << save_path << ". Total poses: " << path_.poses.size();
+    return true;
+}
+
 
 void SlamSystem::ProcessIMU(const lightning::IMUPtr& imu) {
     if (running_ == false) {

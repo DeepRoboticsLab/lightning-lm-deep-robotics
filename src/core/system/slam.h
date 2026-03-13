@@ -74,6 +74,9 @@ class SlamSystem {
     /// 保存地图，默认保存至./data/地图名/ 下方
     void SaveMap(const std::string& path = "");
 
+    /// 保存轨迹，默认保存至./data/ 下方
+    bool SavePath(const std::string& path = "");
+
     /// 处理IMU
     void ProcessIMU(const lightning::IMUPtr& imu);
 
