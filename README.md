@@ -21,6 +21,8 @@ Download the test dataset collected on the M20 robot here:
 *   **Google Drive:** [M20 Robot Dataset](https://drive.google.com/drive/folders/19T__ai6u5WCTwyWi3L4KC9gVZI-jiQM-?usp=drive_link)
 *   *Note: This dataset contains `lidar_data_bag`, which is used in the examples below.*
 
+We also have a larger and harder [dataset](https://drive.google.com/drive/folders/1dAoFarl1nb6sMvoKAEhMDwgeG8ujeo_f?usp=drive_link) recording the M20 robot moving around the main librady at Zhejiang University. This dataset contains aggressive and shaking movements of legged robots which currently this slam algorithm cannot solve. We chanllenge you guys to solve this problem.
+
 ### M20 Hardware Configuration
 For details on how to configure and use the RoboSense LiDAR specific to the M20 robot, refer to the official documentation:
 *   **LiDAR Usage Guide:** [Deep Robotics M20 LiDAR Docs](https://alidocs.dingtalk.com/i/p/OlnXRl7ed542DGLp/docs/qnYMoO1rWxDL7r6LHbad2kA9W47Z3je9)
