@@ -9,12 +9,9 @@ Before deploying on the physical robot, it is highly recommended to obtain the c
 ### Clone the Repository
 Start by cloning the Deep Robotics specific version of the repository, to your workspace source folder:
 ```bash
-git clone https://github.com/DeepRoboticsLab/lightning-lm-deep-robotics.git src/
+git clone https://github.com/DeepRoboticsLab/lightning-lm-deep-robotics.git
 ```
-and copy/link the scripts to current workspace folder:
-```bash
-ln -s src/lightning-lm-deep-robotics/*.sh ./
-```
+
 
 ### M20 Dataset
 Download the test dataset collected on the M20 robot here:
