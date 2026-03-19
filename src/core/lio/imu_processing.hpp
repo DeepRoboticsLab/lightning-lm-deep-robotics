@@ -4,14 +4,18 @@
 #define FASTER_LIO_IMU_PROCESSING_H
 
 #include <glog/logging.h>
+#include <algorithm>
 #include <cmath>
 #include <deque>
 #include <fstream>
+#include <iostream>
+#include <vector>
 
 #include "common/eigen_types.h"
 #include "common/measure_group.h"
 #include "common/point_def.h"
 #include "core/lio/eskf.hpp"
+#include "core/lio/imu_filter.h"
 #include "core/lio/pose6d.h"
 #include "utils/timer.h"
 
@@ -68,6 +72,8 @@ class ImuProcess {
     int init_iter_num_ = 1;
     bool b_first_frame_ = true;
     bool imu_need_init_ = true;
+
+    IMUFilter filter_;
 };
 
 inline ImuProcess::ImuProcess() : b_first_frame_(true), imu_need_init_(true) {
@@ -186,6 +192,11 @@ inline void ImuProcess::UndistortPcl(const MeasureGroup &meas, ESKF &kf_state, C
     Vec3d acc = Vec3d::Zero();
     Vec3d gyro = Vec3d::Zero();
 
+    for (auto &imu : v_imu) {
+        auto imu_f = filter_.Filter(*imu);
+        *imu = imu_f;
+    }
+
     for (auto it_imu = v_imu.begin(); it_imu < (v_imu.end() - 1); it_imu++) {
         auto &&head = *(it_imu);
         auto &&tail = *(it_imu + 1);
@@ -250,7 +261,7 @@ inline void ImuProcess::UndistortPcl(const MeasureGroup &meas, ESKF &kf_state, C
     /*** sort point clouds by offset time ***/
     pcl_out = meas.scan_;
     std::sort(pcl_out->points.begin(), pcl_out->points.end(),
-              [](const PointType &p1, const PointType &p2) { return p1.time < p2.time; });
+              [](const PointType &p1, const PointType &p2) { return p1.timestamp < p2.timestamp; });
 
     /*** undistort each lidar point (backward propagation) ***/
     if (pcl_out->empty()) {
@@ -267,8 +278,8 @@ inline void ImuProcess::UndistortPcl(const MeasureGroup &meas, ESKF &kf_state, C
         acc_imu = (tail->acc);
         angvel_avr = (tail->gyr);
 
-        for (; it_pcl->time / double(1000) > head->offset_time; it_pcl--) {
-            dt = it_pcl->time / double(1000) - head->offset_time;
+        for (; it_pcl->timestamp / double(1000) > head->offset_time; it_pcl--) {
+            dt = it_pcl->timestamp / double(1000) - head->offset_time;
 
             /* Transform to the 'end' frame, using only the rotation
              * Note: Compensation direction is INVERSE of Frame's moving direction

@@ -66,6 +66,11 @@ bool LaserMapping::LoadParamsFromYAML(const std::string &yaml_file) {
         skip_lidar_num_ = yaml["fasterlio"]["skip_lidar_num"].as<int>();
         enable_skip_lidar_ = skip_lidar_num_ > 0;
 
+        float height_max = yaml["roi"]["height_max"].as<float>();
+        float height_min = yaml["roi"]["height_min"].as<float>();
+
+        preprocess_->SetHeightROI(height_max, height_min);
+
     } catch (...) {
         LOG(ERROR) << "bad conversion";
         return false;
@@ -151,6 +156,7 @@ void LaserMapping::ProcessIMU(const lightning::IMUPtr &imu) {
 
 bool LaserMapping::Run() {
     if (!SyncPackages()) {
+        LOG(WARNING) << "sync package failed";
         return false;
     }
 
@@ -214,6 +220,17 @@ bool LaserMapping::Run() {
         LOG(WARNING) << "Too few points, skip this scan!" << scan_undistort_->size() << ", " << scan_down_body_->size();
         return false;
     }
+    
+    if (cur_pts < (scan_undistort_->size() * 0.1)) {
+        /// 降采样太狠了,有效点数不够，用
+
+        auto v = voxel_scan_;
+        v.setLeafSize(0.1, 0.1, 0.1);
+        v.setInputCloud(scan_undistort_);
+        v.filter(*scan_down_body_);
+        cur_pts = scan_down_body_->size();
+    }
+
     scan_down_world_->resize(cur_pts);
     nearest_points_.resize(cur_pts);
 
@@ -221,7 +238,7 @@ bool LaserMapping::Run() {
         [&, this]() {
             // 成员变量预分配
             residuals_.resize(cur_pts, 0);
-            point_selected_surf_.resize(cur_pts, true);
+            point_selected_surf_.resize(cur_pts, 1);
             plane_coef_.resize(cur_pts, Vec4f::Zero());
 
             auto old_state = kf_.GetX();
@@ -236,6 +253,9 @@ bool LaserMapping::Run() {
 
                 LOG(INFO) << "set state as prediction";
             }
+
+            SE3 delta = old_state.GetPose().inverse() * state_point_.GetPose();
+            LOG(INFO) << "delta norm: " << delta.translation().norm() << ", " << delta.so3().log().norm() * 180 / M_PI;
 
             // LOG(INFO) << "old yaw: " << old_state.rot_.angleZ() << ", new: " << state_point_.rot_.angleZ();
 
@@ -325,7 +345,9 @@ void LaserMapping::ProcessPointCloud2(const sensor_msgs::msg::PointCloud2::Share
             double timestamp = ToSec(msg->header.stamp);
             if (timestamp < last_timestamp_lidar_) {
                 LOG(ERROR) << "lidar loop back, clear buffer";
-                lidar_buffer_.clear();
+                // lidar_buffer_.clear();
+                LOG(ERROR) << "lidar loop back, dt: " << timestamp - last_timestamp_lidar_;
+                return;
             }
             LOG(INFO) << "get cloud at " << std::setprecision(14) << timestamp
                       << ", latest imu: " << last_timestamp_imu_;
@@ -399,13 +421,13 @@ bool LaserMapping::SyncPackages() {
         if (measures_.scan_->points.size() <= 1) {
             LOG(WARNING) << "Too few input point cloud!";
             lidar_end_time_ = measures_.lidar_begin_time_ + lidar_mean_scantime_;
-        } else if (measures_.scan_->points.back().time / double(1000) < 0.5 * lidar_mean_scantime_) {
+        } else if (measures_.scan_->points.back().timestamp / double(1000) < 0.5 * lidar_mean_scantime_) {
             lidar_end_time_ = measures_.lidar_begin_time_ + lidar_mean_scantime_;
         } else {
             scan_num_++;
-            lidar_end_time_ = measures_.lidar_begin_time_ + measures_.scan_->points.back().time / double(1000);
+            lidar_end_time_ = measures_.lidar_begin_time_ + measures_.scan_->points.back().timestamp / double(1000);
             lidar_mean_scantime_ +=
-                (measures_.scan_->points.back().time / double(1000) - lidar_mean_scantime_) / scan_num_;
+                (measures_.scan_->points.back().timestamp / double(1000) - lidar_mean_scantime_) / scan_num_;
         }
 
         lo::lidar_time_interval = lidar_mean_scantime_;
@@ -650,9 +672,13 @@ void LaserMapping::ObsModel(NavState &s, ESKF::CustomObservationModel &obs) {
         }
     }
 
-    std::sort(res_sq2.begin(), res_sq2.end());
-    obs.lidar_residual_mean_ = res_sq2[res_sq2.size() / 2];
-    obs.lidar_residual_max_ = res_sq2[res_sq2.size() - 1];
+    if (!res_sq2.empty()) {
+        std::sort(res_sq2.begin(), res_sq2.end());
+        obs.lidar_residual_mean_ = res_sq2[res_sq2.size() / 2];
+        obs.lidar_residual_max_ = res_sq2[res_sq2.size() - 1];
+        // LOG(INFO) << "residual mean: " << obs.lidar_residual_mean_ << ", max: " << obs.lidar_residual_max_
+        //           << ", 85%: " << res_sq2[res_sq2.size() * 0.85];
+    }
 }
 
 ///////////////////////////  private method /////////////////////////////////////////////////////////////////////

@@ -191,10 +191,10 @@ void LoopClosing::ComputeForCandidate(lightning::LoopCandidate& c) {
             }
 
             // 转到世界系下
-            SE3 Twb = kf->GetLIOPose();
+            SE3 Twb = kf->GetOptPose();
 
             if (!build_in_world) {
-                Twb = all_keyframes_.at(given_id)->GetLIOPose().inverse() * Twb;
+                Twb = all_keyframes_.at(given_id)->GetOptPose().inverse() * Twb;
             }
 
             CloudPtr cloud_trans(new PointCloudType);
@@ -214,7 +214,7 @@ void LoopClosing::ComputeForCandidate(lightning::LoopCandidate& c) {
         return;
     }
 
-    Mat4f Tw2 = kf2->GetLIOPose().matrix().cast<float>();
+    Mat4f Tw2 = kf2->GetOptPose().matrix().cast<float>();
 
     /// 不同分辨率下的匹配
     CloudPtr output(new PointCloudType);
@@ -245,7 +245,7 @@ void LoopClosing::ComputeForCandidate(lightning::LoopCandidate& c) {
     q.normalize();
     Vec3d t = T.block<3, 1>(0, 3);
 
-    c.Tij_ = kf1->GetLIOPose().inverse() * SE3(q, t);
+    c.Tij_ = kf1->GetOptPose().inverse() * SE3(q, t);
 
     // pcl::io::savePCDFileBinaryCompressed(
     //     "./data/lc_" + std::to_string(c.idx1_) + "_" + std::to_string(c.idx2_) + "_out.pcd", *output);
@@ -308,9 +308,9 @@ void LoopClosing::PoseOptimization() {
         return;
     }
 
-    if (candidates_.empty()) {
-        return;
-    }
+    // if (candidates_.empty()) {
+    //     return;
+    // }
 
     optimizer_->InitializeOptimization();
     optimizer_->SetVerbose(false);

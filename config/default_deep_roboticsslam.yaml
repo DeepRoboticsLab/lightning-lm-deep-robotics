@@ -13,7 +13,7 @@ fasterlio:
 
   skip_lidar_num: 0 # 点云的跳帧情况
   point_filter_num: 1 # 点云采样参数
-  max_iteration: 6 # 最大迭代次数
+  max_iteration: 4 # 最大迭代次数
   filter_size_scan: 0.5 # 对scan进行的降采样
   filter_size_map: 0.5
 
@@ -21,9 +21,9 @@ fasterlio:
   ivox_nearby_type: 18             # 6, 18, 26
   esti_plane_threshold: 0.1        # default=0.1
 
-  use_aa: true  # use anderson-acceleration
+  use_aa: false  # use anderson-acceleration
 
-  acc_cov: 0.5
+  acc_cov: 1.0
   gyr_cov: 0.1
   b_acc_cov: 0.0001
   b_gyr_cov: 0.0001
@@ -58,19 +58,19 @@ system:
   rviz_global_map_topic: "/global_map_cloud"
   enable_path_rviz: true # 是否启用RViz路径发布
   enable_lidar_odom_skip: false
-  evaluation: false
   lidar_loc_skip_num: 4
   lidar_odom_skip_num: 2
   map_path: ./data/zjulib/
   pub_tf: true
 
 loop_closing:
-  loop_kf_gap: 20       # 每隔多少个关键帧检查一次
+  loop_kf_gap: 10       # 每隔多少个关键帧检查一次
   min_id_interval: 20   # 被检查的关键帧ID间隔
-  closest_id_th: 50     # 历史关键帧与当前帧的ID间隔
-  max_range: 100.0       # 候选帧的最大距离
-  ndt_score_th: 2.0     # ndt位姿分值
+  closest_id_th: 20     # 历史关键帧与当前帧的ID间隔
+  max_range: 60.0       # 候选帧的最大距离
+  ndt_score_th: 1.0     # ndt位姿分值
   with_height: true
+
 
 ### localization ================================================================================================
 lidar_loc:
@@ -87,7 +87,7 @@ lidar_loc:
   lidar_loc_odom_th: 0.5
   init_with_fp: true
   min_init_confidence: 1.8
-  update_dynamic_cloud: false
+  update_dynamic_cloud: true
   update_err_h: 0.2
   update_err_v: 0.2
   update_kf_dis: 2.0
@@ -96,7 +96,7 @@ lidar_loc:
   try_self_extrap: false
 maps:
   delete_when_unload: false
-  dyn_cloud_policy: short
+  dyn_cloud_policy: persistent
   load_dyn_cloud: true
   load_map_size: 2
   max_pts_dyn_chunk: 100000
