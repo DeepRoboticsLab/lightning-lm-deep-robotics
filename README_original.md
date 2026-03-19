@@ -8,33 +8,49 @@ Features of Lightning-LM:
 
 1. [done] Complete 3D Lidar SLAM, fast LIO front-end (AA-FasterLIO), standard
 2. [done] 3D to 2D map conversion (g2p5), optional, if selected outputs real-time 2D grid map, can be saved
-3. [done] Real-time loop closure detection, standard, performs back-end loop closure detection and correction if selected
+3. [done] Real-time loop closure detection, standard, performs back-end loop closure detection and correction if
+   selected
 4. [done] Smooth high-precision 3D Lidar localization, standard
 5. [done] Dynamic loading scheme for map partitions, suitable for large-scale scenes
-6. [done] Localization with separate dynamic and static layers, adaptable to dynamic scenes, selectable strategies for dynamic layer, optional, if selected saves dynamic layer map content, three strategies available (short-term, medium-term, permanent), default is permanent
+6. [done] Localization with separate dynamic and static layers, adaptable to dynamic scenes, selectable strategies for
+   dynamic layer, optional, if selected saves dynamic layer map content, three strategies available (short-term,
+   medium-term, permanent), default is permanent
 7. [done] High-frequency IMU smooth output, standard, 100Hz
 8. GPS geoinformation association, optional (TODO)
 9. Vehicle odometry input, optional (TODO)
-10. [done] Lightweight optimization library miao and incremental optimization (derived from g2o, but lighter and faster, supports incremental optimization, no need to rebuild optimization model), standard, used in both loop closure and localization
-11. [done] Two verification schemes: offline and online. Offline allows breakpoint debugging with strong consistency. Online allows multi-threaded concurrency, fast processing speed, dynamic frame skipping, and low resource usage.
+10. [done] Lightweight optimization library miao and incremental optimization (derived from g2o, but lighter and faster,
+    supports incremental optimization, no need to rebuild optimization model), standard, used in both loop closure and
+    localization
+11. [done] Two verification schemes: offline and online. Offline allows breakpoint debugging with strong consistency.
+    Online allows multi-threaded concurrency, fast processing speed, dynamic frame skipping, and low resource usage.
 12. [done] High-frequency output based on extrapolator and smoother, adjustable smoothing factor
-13. [done] High-performance computing: All the above features can run using less than one CPU core on the pure CPU side (online localization 0.8 cores, mapping 1.2 cores, 32-line LiDAR, without UI).
+13. [done] High-performance computing: All the above features can run using less than one CPU core on the pure CPU
+    side (online localization 0.8 cores, mapping 1.2 cores, 32-line LiDAR, without UI).
+
+## Updates
+
+1. 2025.11.13
+
+- Fix two logic typos in FasterLIO.
+- Add global height constraint that can be configured in loop_closing.with_height. If set true, lightning-lm will keep
+  the output map into the same height to avoid the Z-axis drifting in large scenes. It should not be set if you are
+  using lightning-lm in scenes that have multi-floor or stairs structures.
 
 ## Examples
 
 - Mapping on the VBR campus dataset:
 
-![](./doc/slam_vbr.gif)
+  ![](./doc/slam_vbr.gif)
 
 - Localization on VBR
 
-![](./doc/lm_loc_vbr_campus.gif)
+  ![](./doc/lm_loc_vbr_campus.gif)
 
 - Map on VBR
-   - Point Cloud
+    - Point Cloud
 
   ![](./doc/campus_vbr.png)
-   - Grid Map
+    - Grid Map
 
   ![](./doc/campus.png)
 
@@ -65,13 +81,15 @@ On Ubuntu 22.04, run: ```bash ./scripts/install_dep.sh```.
 
 ### Build
 
-Build this package with ```colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release```.
+Build this package with ```colcon build```.
 
 Then ```source install/setup.bash``` to use it.
 
 ### Build Results
 
-After building, you will get the corresponding online/offline mapping and localization programs for this package. The offline programs are suitable for scenarios with offline data packets to quickly obtain mapping/localization results, while the online programs are suitable for scenarios with actual sensors to obtain real-time results.
+After building, you will get the corresponding online/offline mapping and localization programs for this package. The
+offline programs are suitable for scenarios with offline data packets to quickly obtain mapping/localization results,
+while the online programs are suitable for scenarios with actual sensors to obtain real-time results.
 
 For example, calling the offline mapping program on the NCLT dataset:
 ```ros2 run lightning run_slam_offline --input_bag ~/data/NCLT/20130110/20130110.db3 --config ./config/default_nclt.yaml```
@@ -80,11 +98,13 @@ If you want to call the online version, just change the offline part to online.
 
 ## Testing on Datasets
 
-You can directly use our converted datasets. If you need the original datasets, you need to convert them to the ros2 db3 format.
+You can directly use our converted datasets. If you need the original datasets, you need to convert them to the ros2 db3
+format.
 
 Converted dataset addresses:
+
 - OneDrive: https://1drv.ms/f/c/1a7361d22c554503/EpDSys0bWbxDhNGDYL_O0hUBa2OnhNRvNo2Gey2id7QMQA?e=7Ui0f5
-- BaiduYun: https://pan.baidu.com/s/1NEGQcYoMtd57oqog09pB6w?pwd=5v8h 提取码: 5v8h 
+- BaiduYun: https://pan.baidu.com/s/1XmFitUtnkKa2d0YtWquQXw?pwd=xehn 提取码: xehn
 
 Original dataset addresses:
 
@@ -95,89 +115,66 @@ Original dataset addresses:
 ### Mapping Test
 
 1. Real-time mapping (real-time bag playback)
-```bash
-ros2 bag play ~/Downloads/m20/lidar_data_bag --clock
-# 实时很耗资源，在wsl上数据播放只能4帧/s
-ros2 run lightning run_slam_online --config ./src/lightning-lm/config/default_deep_robotics.yaml
-```
-   - Start the mapping program:
-   
-     ```ros2 run lightning run_slam_online --config ./config/default_nclt.yaml```
-
-     ```ros2 run lightning run_slam_online --config src/lightning-lm/config/default_deep_robotics.yaml```
-   - Play the data bag
-   - Save the map ```ros2 service call /lightning/save_map /lightning/srv/SaveMap "{map_id: new_map}"```
+    - Start the mapping program:
+      ```ros2 run lightning run_slam_online --config ./config/default_nclt.yaml```
+    - Play the data bag
+    - Save the map ```ros2 service call /lightning/save_map lightning/srv/SaveMap "{map_id: new_map}"```
 2. Offline mapping (traverse data, faster)
-
-```bash
-ros2 run lightning run_slam_offline --input_bag /mnt/e/data/NCLT/20120115/20120115-002.db3 --config ./src/lightning-lm/config/default_nclt.yaml
-
-ros2 run lightning run_slam_offline --input_bag /home/msy/Downloads/m20/lidar_data_bag/lidar_data_bag_0.db3 --config ./src/lightning-lm/config/default_deep_robotics.yaml
-
-# 测试车库的，转向扫描比较全
-ros2 run lightning run_slam_offline --input_bag /home/msy/Downloads/go4/turn_merged/turn_merged.db3 --config ./src/lightning-lm/config/mid360_116.yaml
-```
-
-   - ```ros2 run lightning run_slam_offline --config ./config/default_nclt.yaml --input_bag /home/percy/third_party/lightning_lm/NCLT/20120115```
-   - ```ros2 run lightning run_slam_offline --config /home/ubuntu/deep_robotics/m20_slam/lightning_lm/src/lightning-lm/config/default_deep_robotics.yaml --input_bag /home/ubuntu/deep_robotics/m20_slam/ros_bags/lidar_data_bag```
-   - It will automatically save to the data/new_map directory after finishing.
+    - ```ros2 run lightning run_slam_offline --config ./config/default_nclt.yaml --input_bag [bag_file]```
+    - It will automatically save to the data/new_map directory after finishing.
 3. Viewing the map
-   - View the full map: ```pcl_viewer ./data/new_map/global.pcd```
-   - The actual map is stored in blocks, global.pcd is only for displaying the result.
-   - map.pgm stores the 2D grid map information.
-   - Note that during the localization program run or upon exit, results for dynamic layers might also be stored in the same directory, so there might be more files.
-
-To view the 2d map, `sudo apt install feh` and `feh data/new_map/map.pgm`
+    - View the full map: ```pcl_viewer ./data/new_map/global.pcd```
+    - The actual map is stored in blocks, global.pcd is only for displaying the result.
+    - map.pgm stores the 2D grid map information.
+    - Note that during the localization program run or upon exit, results for dynamic layers might also be stored in the
+      same directory, so there might be more files.
 
 ### Localization Test
-```bash
-ros2 bag play ~/Downloads/m20/lidar_data_bag --clock
-# 已经建图完成了，在实时按图定位。 no UI shows.
-# pcl_viewer data/new_map2/0.pcd 用于定位的静态地图点云
-ros2 run lightning run_loc_online --config ./src/lightning-lm/config/default_deep_robotics.yaml
-
-ros2 bag play ~/Downloads/go4/fast2_merged --clock
-ros2 run lightning run_loc_online --config ./src/lightning-lm/config/mid360_116.yaml
-```
 
 1. Real-time localization
-   - Write the map path to `system.map_path` in the yaml file, default is `new_map` (consistent with the mapping default).
-   - Place the vehicle at the mapping starting point.
-   - Start the localization program:
-     ```ros2 run lightning run_loc_online --config ./config/default_nclt.yaml```
-     ```ros2 run lightning run_loc_online --config  /home/ubuntu/deep_robotics/m20_slam/lightning_lm/src/lightning-lm/config/default_deep_robotics.yaml```
-   - Play the bag or input sensor data.
+    - Write the map path to `system.map_path` in the yaml file, default is `new_map` (consistent with the mapping
+      default).
+    - Place the vehicle at the mapping starting point.
+    - Start the localization program:
+      ```ros2 run lightning run_loc_online --config ./config/default_nclt.yaml```
+    - Play the bag or input sensor data.
 2. Offline localization
-   - ```ros2 run lightning run_loc_offline --config ./config/default_nclt.yaml --input_bag [bag_file]```
+    - ```ros2 run lightning run_loc_offline --config ./config/default_nclt.yaml --input_bag [bag_file]```
 3. Receiving localization results
-   - The localization program outputs TF topics at the same frequency as the IMU (50-100Hz).
+    - The localization program outputs TF topics at the same frequency as the IMU (50-100Hz).
 
 ### Debugging on Your Own Device
 
-First, you need to know your LiDAR type and set the corresponding `fasterlio.lidar_type`. Set it to 1 for Livox series, 2 for Velodyne, 3 for Ouster, 4 for RoboSense.
+First, you need to know your LiDAR type and set the corresponding `fasterlio.lidar_type`. Set it to 1 for Livox series,
+2 for Velodyne, 3 for Ouster.
 If it's not one of the above types, you can refer to the Velodyne setup method.
 
-A simpler way is to first record a ros2 bag, get offline mapping and localization working, and then debug the online situation.
+A simpler way is to first record a ros2 bag, get offline mapping and localization working, and then debug the online
+situation.
 
 You usually need to modify `common.lidar_topic` and `common.imu_topic` to set the LiDAR and IMU topics.
 
 The IMU and LiDAR extrinsic parameters can default to zero; we are not sensitive to them.
 
-The `fasterlio.time_scale` related to timestamps is sensitive. You should pay attention to whether the LiDAR point cloud has timestamps for each point and if they are calculated correctly. This code is in `core/lio/pointcloud_preprocess`.
+The `fasterlio.time_scale` related to timestamps is sensitive. You should pay attention to whether the LiDAR point cloud
+has timestamps for each point and if they are calculated correctly. This code is in `core/lio/pointcloud_preprocess`.
 
 Refer to the next section for other parameter adjustments.
 
 ### Fine-tuning Lightning-LM
 
-You can fine-tune Lightning by modifying the configuration file, turning some features on or off. Common configuration items include:
+You can fine-tune Lightning by modifying the configuration file, turning some features on or off. Common configuration
+items include:
 
 - `system.with_loop_closing` Whether loop closure detection is needed
 - `system.with_ui` Whether 3D UI is needed
 - `system.with_2dui` Whether 2D UI is needed
 - `system.with_g2p5` Whether grid map is needed
 - `system.map_path` Storage path for the map
-- `fasterlio.point_filter_num` Point sampling number. Increasing this results in fewer points, faster computation, but not recommended to set above 10.
-- `g2p5.esti_floor` Whether g2p5 needs to dynamically estimate ground parameters. If the LiDAR rotates horizontally and the height is constant, you can turn this option off.
+- `fasterlio.point_filter_num` Point sampling number. Increasing this results in fewer points, faster computation, but
+  not recommended to set above 10.
+- `g2p5.esti_floor` Whether g2p5 needs to dynamically estimate ground parameters. If the LiDAR rotates horizontally and
+  the height is constant, you can turn this option off.
 - `g2p5.grid_map_resolution` Resolution of the grid map
 
 ### TODO
@@ -197,7 +194,7 @@ You can fine-tune Lightning by modifying the configuration file, turning some fe
 
 ---
 
-Lightning-LM 是一个完整的激光建图+定位模块。
+# Lightning-LM 是一个完整的激光建图+定位模块。
 
 Lightning-LM特性：
 
@@ -215,6 +212,20 @@ Lightning-LM特性：
 12. [done] 基于外推器和平滑器的高频率输出，平滑因子可调
 13. [done] 高性能计算：以上这些特性在纯CPU端不到一个核心就可以运行（在线定位0.8个核，建图1.2个核，32线雷达，无UI情况）
 
+## 更新
+
+### 2025.11.27
+
+- 在LIO模块中添加了Cauchy's kernel
+- 在定位模块中增加了配置： try_self_extrap，默认关闭。也就是定位模块不会根据自身外推的位姿做定位（因为定位间隔较大，车辆运动较大时不准）。
+- 添加了一个livox的配置文件，因为用livox的人比较多
+- 如果建图时设置了固定高度，那么定位也会使用这个地图高度（默认关闭）
+
+### 2025.11.13
+
+- 修复了FasterLIO中的两个逻辑问题
+- 增加了高度约束，在loop_closing.with_height中配置。配置高度约束以后，lightning会保障输出地图的水平度（限制Z轴飘移），但这样就不适用于多层室内之类的带有立体结构的场景。
+
 ## 案例
 
 - VBR campus数据集上的建图：
@@ -223,14 +234,14 @@ Lightning-LM特性：
 
 - VBR上的定位
 
-![](./doc/lm_loc_vbr_campus.gif)
+  ![](./doc/lm_loc_vbr_campus.gif)
 
 - VBR上的地图
-   - 点云
+    - 点云
 
   ![](./doc/campus_vbr.png)
-   - 栅格
-   
+    - 栅格
+
   ![](./doc/campus.png)
 
 - NCLT 数据集上的定位
@@ -260,7 +271,7 @@ Ubuntu 20.04 应该也可行，未测试。
 
 ### 编译
 
-```colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release```本包即可。
+```colcon build```本包即可。
 
 然后```source install/setup.bash```即可使用。
 
@@ -269,7 +280,7 @@ Ubuntu 20.04 应该也可行，未测试。
 编译后，会得到本包对应的在线/离线建图程序与定位程序。离线程序适用于存在离线数据包，快速得到建图/定位结果的方案，在线程序则适用于有实际传感器，得到实时结果的方案。
 
 例如：在NCLT数据集上调用离线建图程序:
-```ros2 run lightning run_slam_offline --input_bag ~/data/NCLT/20130110/20130110.db3 --config ./config/default_nclt.yaml```
+```ros2 run lightning run_slam_offline --input_bag /mnt/e/data/NCLT/20120115/20120115-002.db3 --config ./config/default_nclt.yaml```
 
 如果希望调用在线的版本，则将offline部分改成online即可。
 
@@ -278,8 +289,9 @@ Ubuntu 20.04 应该也可行，未测试。
 您可以直接使用我们转换完的数据集。如果需要原始的数据集，您需要将它们转换到ros2的db3格式。
 
 转换后的数据集地址：
+
 - OneDrive: https://1drv.ms/f/c/1a7361d22c554503/EpDSys0bWbxDhNGDYL_O0hUBa2OnhNRvNo2Gey2id7QMQA?e=7Ui0f5
-- BaiduYun: https://pan.baidu.com/s/1NEGQcYoMtd57oqog09pB6w?pwd=5v8h 提取码: 5v8h 
+- BaiduYun: https://pan.baidu.com/s/1XmFitUtnkKa2d0YtWquQXw?pwd=xehn 提取码: xehn
 
 原始数据集地址：
 
@@ -287,13 +299,13 @@ Ubuntu 20.04 应该也可行，未测试。
 - UrbanLoco 数据集： https://github.com/weisongwen/UrbanLoco
 - VBR 数据集：https://www.rvp-group.net/slam-dataset.html
 
-### 建图测试
+## 建图测试
 
 1. 实时建图（实时播包）
     - 启动建图程序:
       ```ros2 run lightning run_slam_online --config ./config/default_nclt.yaml```
     - 播放数据包
-    - 保存地图 ```ros2 service call /lightning/save_map /lightning/srv/SaveMap "{map_id: new_map}"```
+    - 保存地图 ```ros2 service call /lightning/save_map lightning/srv/SaveMap "{map_id: new_map}"```
 2. 离线建图（遍历跑数据，更快一些）
     - ```ros2 run lightning run_slam_offline --config ./config/default_nclt.yaml --input_bag 数据包```
     - 结束后会自动保存至data/new_map目录下
@@ -320,7 +332,7 @@ Ubuntu 20.04 应该也可行，未测试。
 
 ### 在您自己的设备上调试
 
-首先您需要知道自己的雷达类型，设置对应的fasterlio.lidar_type类型。livox系列的配置成1，Velodyne的设置成2,ouster设置成3,robosense设置为4.
+首先您需要知道自己的雷达类型，设置对应的fasterlio.lidar_type类型。livox系列的配置成1，Velodyne的设置成2,ouster设置成3.
 如果不在以上种类，可以参考velodyne的设置方式。
 
 比较简单的方式是先录一个ros2的数据包，将离线的建图、定位调通后，再去调试在线的情况。

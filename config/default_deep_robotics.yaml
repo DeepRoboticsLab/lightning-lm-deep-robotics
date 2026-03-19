@@ -65,7 +65,7 @@ loop_closing:
   closest_id_th: 50     # 历史关键帧与当前帧的ID间隔
   max_range: 30.0       # 候选帧的最大距离
   ndt_score_th: 1.0     # ndt位姿分值
-
+  with_height: true
 
 ### localization ================================================================================================
 lidar_loc:
@@ -87,6 +87,8 @@ lidar_loc:
   update_err_v: 0.2
   update_kf_dis: 2.0
   update_lidar_loc_score: 2.5
+  loc_on_kf: true
+  try_self_extrap: false
 maps:
   delete_when_unload: false
   dyn_cloud_policy: persistent

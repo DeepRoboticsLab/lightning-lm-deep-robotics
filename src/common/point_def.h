@@ -17,14 +17,14 @@
 struct PointXYZIT {
     PCL_ADD_POINT4D
     PCL_ADD_INTENSITY
-    double time;
+    double timestamp;
     PointXYZIT() {}
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 };
 
 POINT_CLOUD_REGISTER_POINT_STRUCT(PointXYZIT,
-                                  (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(double, time,
-                                                                                                       timestamp))
+                                  (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)
+                                  (double, timestamp,timestamp))
 
 namespace velodyne_ros {
 struct EIGEN_ALIGN16 Point {

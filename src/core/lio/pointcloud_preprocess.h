@@ -42,6 +42,10 @@ class PointCloudPreprocess {
     float &TimeScale() { return time_scale_; }
     LidarType GetLidarType() const { return lidar_type_; }
     void SetLidarType(LidarType lt) { lidar_type_ = lt; }
+    void SetHeightROI(float height_max, float height_min) {
+        height_max_ = height_max;
+        height_min_ = height_min;
+    }
 
    private:
     void Oust64Handler(const sensor_msgs::msg::PointCloud2 ::SharedPtr &msg);
@@ -56,6 +60,9 @@ class PointCloudPreprocess {
     double blind_ = 0.01;
     float time_scale_ = 1e-3;
     bool given_offset_time_ = false;
+
+    float height_max_ = 1.0;
+    float height_min_ = -1.0;
 };
 }  // namespace lightning
 

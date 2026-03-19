@@ -13,6 +13,7 @@
 #include "core/opti_algo/algo_select.h"
 #include "core/robust_kernel/cauchy.h"
 #include "core/types/edge_se3.h"
+#include "core/types/edge_se3_height_prior.h"
 #include "core/types/vertex_se3.h"
 #include "io/yaml_io.h"
 
@@ -49,6 +50,7 @@ void LoopClosing::Init(const std::string yaml_path) {
         options_.closest_id_th_ = yaml.GetValue<int>("loop_closing", "closest_id_th");
         options_.max_range_ = yaml.GetValue<double>("loop_closing", "max_range");
         options_.ndt_score_th_ = yaml.GetValue<double>("loop_closing", "ndt_score_th");
+        options_.with_height_ = yaml.GetValue<bool>("loop_closing", "with_height");
     }
 
     if (options_.online_mode_) {
@@ -189,10 +191,10 @@ void LoopClosing::ComputeForCandidate(lightning::LoopCandidate& c) {
             }
 
             // 转到世界系下
-            SE3 Twb = kf->GetLIOPose();
+            SE3 Twb = kf->GetOptPose();
 
             if (!build_in_world) {
-                Twb = all_keyframes_.at(given_id)->GetLIOPose().inverse() * Twb;
+                Twb = all_keyframes_.at(given_id)->GetOptPose().inverse() * Twb;
             }
 
             CloudPtr cloud_trans(new PointCloudType);
@@ -212,7 +214,7 @@ void LoopClosing::ComputeForCandidate(lightning::LoopCandidate& c) {
         return;
     }
 
-    Mat4f Tw2 = kf2->GetLIOPose().matrix().cast<float>();
+    Mat4f Tw2 = kf2->GetOptPose().matrix().cast<float>();
 
     /// 不同分辨率下的匹配
     CloudPtr output(new PointCloudType);
@@ -243,7 +245,7 @@ void LoopClosing::ComputeForCandidate(lightning::LoopCandidate& c) {
     q.normalize();
     Vec3d t = T.block<3, 1>(0, 3);
 
-    c.Tij_ = kf1->GetLIOPose().inverse() * SE3(q, t);
+    c.Tij_ = kf1->GetOptPose().inverse() * SE3(q, t);
 
     // pcl::io::savePCDFileBinaryCompressed(
     //     "./data/lc_" + std::to_string(c.idx1_) + "_" + std::to_string(c.idx2_) + "_out.pcd", *output);
@@ -276,6 +278,15 @@ void LoopClosing::PoseOptimization() {
             optimizer_->AddEdge(e);
         }
     }
+    
+    if (options_.with_height_) {
+        /// 高度约束
+        auto e = std::make_shared<miao::EdgeHeightPrior>();
+        e->SetVertex(0, v);
+        e->SetMeasurement(0);
+        e->SetInformation(Mat1d::Identity() * 1.0 / (options_.height_noise_ * options_.height_noise_));
+        optimizer_->AddEdge(e);
+    }
 
     /// 回环的约束
     for (auto& c : candidates_) {
@@ -297,9 +308,9 @@ void LoopClosing::PoseOptimization() {
         return;
     }
 
-    if (candidates_.empty()) {
-        return;
-    }
+    // if (candidates_.empty()) {
+    //     return;
+    // }
 
     optimizer_->InitializeOptimization();
     optimizer_->SetVerbose(false);
