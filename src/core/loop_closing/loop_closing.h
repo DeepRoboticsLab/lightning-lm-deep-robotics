@@ -39,6 +39,9 @@ class LoopClosing {
         double loop_rot_noise_ = 3.0 * M_PI / 180.0;  // 旋转权重
 
         double rk_loop_th_ = 5.2 / 5;  // 回环的RK阈值
+        
+        bool with_height_ = true;
+        double height_noise_ = 0.1;
     };
 
     LoopClosing(Options options = Options()) { options_ = options; }

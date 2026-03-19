@@ -520,8 +520,8 @@ void LaserMapping::ObsModel(NavState &s, ESKF::CustomObservationModel &obs) {
 
     Timer::Evaluate(
         [&, this]() {
-            auto R_wl = (s.rot_ * s.offset_R_lidar_).cast<float>();
-            auto t_wl = (s.rot_ * s.offset_t_lidar_ + s.pos_).cast<float>();
+            Mat3f R_wl = (s.rot_ * s.offset_R_lidar_).matrix().cast<float>();
+            Vec3f t_wl = (s.rot_ * s.offset_t_lidar_ + s.pos_).cast<float>();
 
             std::for_each(std::execution::par_unseq, index.begin(), index.end(), [&](const size_t &i) {
                 PointType &point_body = scan_down_body_->points[i];
@@ -533,6 +533,7 @@ void LaserMapping::ObsModel(NavState &s, ESKF::CustomObservationModel &obs) {
                 point_world.intensity = point_body.intensity;
 
                 auto &points_near = nearest_points_[i];
+                points_near.clear();
 
                 /** Find the closest surfaces in the map **/
                 // if (obs.converge_) {
@@ -552,6 +553,8 @@ void LaserMapping::ObsModel(NavState &s, ESKF::CustomObservationModel &obs) {
                     if (valid_corr) {
                         point_selected_surf_[i] = true;
                         residuals_[i] = pd2;
+                    } else {
+                        point_selected_surf_[i] = false;
                     }
                 }
             });
@@ -614,7 +617,26 @@ void LaserMapping::ObsModel(NavState &s, ESKF::CustomObservationModel &obs) {
                 }
 
                 /*** Measurement: distance to the closest surface/corner ***/
-                obs.residual_(i) = -corr_pts_[i][3];
+                /// 增加了cauchy's robust kernel
+                float res = -corr_pts_[i][3];
+                float rho, drho;
+
+                const float delta = 2.0;
+                const float dsqr = delta * delta;
+                const float dsqr_inv = 1.0 / dsqr;
+
+                if (res >= 0) {
+                    rho = dsqr * std::log(1 + res * dsqr_inv);
+                    drho = 1.0 / (1 + res * dsqr_inv);
+                } else {
+                    rho = -dsqr * std::log(1 - res * dsqr_inv);
+                    drho = 1.0 / (1 - res * dsqr_inv);
+                }
+
+                obs.residual_(i) = rho;
+                obs.h_x_.block<1, 12>(i, 0) = obs.h_x_.block<1, 12>(i, 0).eval() * drho;
+
+                // obs.residual_(i) = res;
             });
         },
         "    ObsModel (IEKF Build Jacobian)");
@@ -663,6 +685,8 @@ CloudPtr LaserMapping::GetGlobalMap(bool use_lio_pose, bool use_voxel, float res
         }
 
         *global_map += *cloud_trans;
+
+        LOG(INFO) << "kf " << kf->GetID() << ", pose: " << kf->GetOptPose().translation().transpose();
     }
 
     CloudPtr global_map_filtered(new PointCloudType);
