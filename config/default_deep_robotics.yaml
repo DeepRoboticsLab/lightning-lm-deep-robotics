@@ -56,7 +56,7 @@ system:
   lidar_odom_skip_num: 2
   map_path: ./data/office4f/
   pub_tf: true
--
+
 loop_closing:
   loop_kf_gap: 10       # 每隔多少个关键帧检查一次
   min_id_interval: 20   # 被检查的关键帧ID间隔
