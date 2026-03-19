@@ -146,7 +146,7 @@ void LocSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr &clo
 
         if (nav_state_pub_ != nullptr) {
             msg::NavState ns;
-            ns.header.stamp = node_->now();
+            ns.header.stamp = cloud->header.stamp;
             ns.header.frame_id = "map";
             ns.pose.position.x = state.pos_.x();
             ns.pose.position.y = state.pos_.y();
@@ -238,7 +238,7 @@ void LocSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr 
 
         if (nav_state_pub_ != nullptr) {
             msg::NavState ns;
-            ns.header.stamp = node_->now();
+            ns.header.stamp = cloud->header.stamp;
             ns.header.frame_id = "map";
             ns.pose.position.x = state.pos_.x();
             ns.pose.position.y = state.pos_.y();

@@ -364,7 +364,7 @@ void SlamSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr& cl
     if (nav_state_pub_ != nullptr) {
         auto state = lio_->GetState();
         msg::NavState ns;
-        ns.header.stamp = node_->now();
+        ns.header.stamp = cloud->header.stamp;
         ns.header.frame_id = "map";
         ns.pose.position.x = state.pos_.x();
         ns.pose.position.y = state.pos_.y();
@@ -488,7 +488,7 @@ void SlamSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr
     if (nav_state_pub_ != nullptr) {
         auto state = lio_->GetState();
         msg::NavState ns;
-        ns.header.stamp = node_->now();
+        ns.header.stamp = cloud->header.stamp;
         ns.header.frame_id = "map";
         ns.pose.position.x = state.pos_.x();
         ns.pose.position.y = state.pos_.y();
