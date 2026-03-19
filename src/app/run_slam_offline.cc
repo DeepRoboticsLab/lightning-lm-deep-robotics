@@ -16,6 +16,22 @@
 DEFINE_string(input_bag, "", "输入数据包");
 DEFINE_string(config, "./config/default.yaml", "配置文件");
 
+// Global pointer to SlamSystem instance
+lightning::SlamSystem* slam_instance = nullptr;
+
+// Signal handler for SIGINT
+void SignalHandler(int signum) {
+    if (slam_instance) {
+        LOG(INFO) << "SIGINT received, saving map and path...";
+        slam_instance->SaveMap();
+        slam_instance->SavePath();
+    }
+    rclcpp::shutdown();
+    LOG(INFO) << "Shutdown complete.";
+    std::exit(signum);
+}
+
+
 /// 运行一个LIO前端，带可视化
 int main(int argc, char** argv) {
     google::InitGoogleLogging(argv[0]);
@@ -36,7 +52,7 @@ int main(int argc, char** argv) {
     options.online_mode_ = false;
 
     SlamSystem slam(options);
-
+    slam_instance = &slam;  // Assign global pointer
     /// 实时模式好像掉帧掉的比较厉害？
 
     if (!slam.Init(FLAGS_config)) {
@@ -44,7 +60,7 @@ int main(int argc, char** argv) {
         return -1;
     }
 
-    slam.StartSLAM("new_map");
+    slam.StartSLAM("");
 
     lightning::YAML_IO yaml(FLAGS_config);
     std::string lidar_topic = yaml.GetValue<std::string>("common", "lidar_topic");
@@ -72,7 +88,7 @@ int main(int argc, char** argv) {
                              })
         .Go();
 
-    slam.SaveMap("");
+    slam.SaveMap("new_map");
     Timer::PrintAll();
 
     LOG(INFO) << "done";

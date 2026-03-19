@@ -4,6 +4,9 @@ log
 **/build/
 **/install/
 **/log/
+*build
+*install
+*log
 *.vscode
 *libs
 **data

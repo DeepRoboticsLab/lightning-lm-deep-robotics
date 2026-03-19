@@ -3,8 +3,9 @@ import sys
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+# python3 src/lightning-lm/scripts/visualize_trajectory.py data/path_20260313_133347.txt --angle 180
 
-def plot_trajectory(file_path):
+def plot_trajectory(file_path, rotation_angle=0.0):
     if not os.path.exists(file_path):
         print(f"Error: File '{file_path}' not found.")
         return
@@ -12,27 +13,35 @@ def plot_trajectory(file_path):
     try:
         # Assuming the format: timestamp x y z qx qy qz qw
         # Using a more robust way to load data manualy if numpy fails due to version mismatch
-        x = []
-        y = []
+        x_raw = []
+        y_raw = []
         with open(file_path, 'r') as f:
             for line in f:
-                parts = line.split()
+                # Handle CSV format (comma separated) or Space separated
+                parts = line.replace(',', ' ').split()
                 if len(parts) >= 3:
                     try:
-                        x.append(float(parts[1]))
-                        y.append(float(parts[2]))
+                        x_raw.append(float(parts[1]))
+                        y_raw.append(float(parts[2]))
                     except ValueError:
                         continue
         
-        if not x:
+        if not x_raw:
             print(f"Error: No valid data found in '{file_path}'.")
             return
 
-        x = np.array(x)
-        y = np.array(y)
+        x_raw = np.array(x_raw)
+        y_raw = np.array(y_raw)
+
+        # 应用旋转矩阵计算
+        theta = np.radians(rotation_angle)
+        c, s = np.cos(theta), np.sin(theta)
+        # R = [[cos, -sin], [sin, cos]]
+        x = c * x_raw - s * y_raw
+        y = s * x_raw + c * y_raw
 
         plt.figure(figsize=(10, 8))
-        plt.plot(x, y, label='Trajectory', marker='.', markersize=4, linestyle='-',\
+        plt.plot(x, y, label=f'Trajectory (Rotated {rotation_angle}°)', marker='.', markersize=4, linestyle='-',\
                   linewidth=2, alpha=1)
         plt.scatter(x[0], y[0], color='green', label='Start', s=100, zorder=5)
         plt.scatter(x[-1], y[-1], color='red', label='End', s=100, zorder=5)
@@ -51,21 +60,16 @@ def plot_trajectory(file_path):
         print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
-    # Get current script directory to resolve relative paths if needed
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    # Assuming the script is in src/lightning-lm-deep-robotics/scripts, and data is in workspace root
-    workspace_root = os.path.abspath(os.path.join(current_dir, "../../.."))
+    import argparse
+    parser = argparse.ArgumentParser(description='Visualize trajectory from a file with optional rotation.')
+    parser.add_argument('file_path', type=str, help='Path to the trajectory file')
+    parser.add_argument('--angle', type=float, default=0.0, help='Rotation angle in degrees (counter-clockwise)')
+    
+    args = parser.parse_args()
 
-    if len(sys.argv) < 2:
-        print("Usage: python3 visualize_trajectory.py <path_to_trajectory_file>")
-        # Default to a file in data/ if it exists and no argument provided
-        default_file = os.path.join(current_dir, "data/path_20260311_102412.txt")
-        if os.path.exists(default_file):
-            print(f"No file provided. Visualizing default file: {default_file}")
-            plot_trajectory(default_file)
-    else:
-        # Resolve path relative to current working directory or as absolute path
-        input_path = sys.argv[1]
-        if not os.path.isabs(input_path):
-            input_path = os.path.join(os.getcwd(), input_path)
-        plot_trajectory(input_path)
+    # Resolve path relative to current working directory or as absolute path
+    input_path = args.file_path
+    if not os.path.isabs(input_path):
+        input_path = os.path.join(os.getcwd(), input_path)
+    
+    plot_trajectory(input_path, args.angle)

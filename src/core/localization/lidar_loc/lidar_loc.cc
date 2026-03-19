@@ -482,6 +482,8 @@ void LidarLoc::Align(const CloudPtr& input) {
         }
 
         if (options_.init_with_fp_) {
+            // referring to distinctive geometric features extracted from the LiDAR point cloud data used for initialization purposes.
+            //  before switching to the main NDT (Normal Distributions Transform) scan matching algorithm.
             /// 从功能点初始化
             /// 如果之前尝试过，那么需要间隔一段时间再进行搜索
             if (!fp_init_fail_pose_vec_.empty() && current_dr_pose_set_) {
