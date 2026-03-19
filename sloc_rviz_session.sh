@@ -12,11 +12,11 @@ tmux new-window -t loc:0 -n 'lightning'
 tmux send-keys -t loc:0 "$ros2sh && ros2 run lightning run_loc_online --config src/lightning-lm-deep-robotics/config/default_deep_roboticsloc.yaml" C-m
 
 # Tab 1: Static transform publisher
-tmux new-window -t loc:1 -n 'navstate'
+tmux new-window -t loc:1 -n 'vis'
 tmux send-keys -t loc:1 "$ros2sh && rviz2 -d src/lightning-lm-deep-robotics/config/showglobalmap.rviz" C-m
 
 # Tab 2: Check node info, save map service
-tmux new-window -t loc:2 -n 'node_info'
+tmux new-window -t loc:2 -n 'navstate'
 tmux send-keys -t loc:2 "$ros2sh && sleep 5 && ros2 topic echo /lightning/nav_state" C-m
 
 tmux new-window -t loc:3 -n 'node_info'
