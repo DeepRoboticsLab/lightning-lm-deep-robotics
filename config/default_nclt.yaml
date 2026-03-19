@@ -1,20 +1,20 @@
 # 针对NCLT的配置
 common:
   dataset: "nclt"
-  lidar_topic: "points_raw"
+  lidar_topic: "/LIDAR/POINTS"
   livox_lidar_topic: "/livox/lidar"
-  imu_topic: "imu_raw"
+  imu_topic: "/IMU"
 
 # fasterlio 参数
 fasterlio:
-  lidar_type: 2                # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR,
+  lidar_type: 4               # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR,
   scan_line: 32
   blind: 0.5                # 盲区，小于盲区距离的不会处理
   time_scale: 1e-3             # 兼容不同数据集的时间单位，仅对Velodyne LiDAR(lidar_type=2)生效
 
   skip_lidar_num: 0 # 点云的跳帧情况
-  point_filter_num: 10 # 点云采样参数
-  max_iteration: 6 # 最大迭代次数
+  point_filter_num: 6 # 点云采样参数
+  max_iteration: 4 # 最大迭代次数
   filter_size_scan: 0.5 # 对scan进行的降采样
   filter_size_map: 0.5
 
@@ -22,14 +22,14 @@ fasterlio:
   ivox_nearby_type: 18             # 6, 18, 26
   esti_plane_threshold: 0.1        # default=0.1
 
-  use_aa: true  # use anderson-acceleration
+  use_aa: false  # use anderson-acceleration
 
   acc_cov: 0.1
   gyr_cov: 0.1
   b_acc_cov: 0.0001
   b_gyr_cov: 0.0001
   extrinsic_est_en: false      # true: enable the online estimation of IMU-LiDAR extrinsic
-  extrinsic_T: [ 0, 0, 0.28 ]
+  extrinsic_T: [ 0, 0, 0.0 ]
   extrinsic_R: [ 1, 0, 0,
                  0, 1, 0,
                  0, 0, 1 ]
@@ -48,7 +48,7 @@ system:
   with_loop_closing: true # 是否需要回环检测
   with_ui: true # 是否需要3D UI
   with_2dui: false # 是否需要2D UI
-  with_g2p5: true # 是否需要栅格地图
+  with_g2p5: false # 是否需要栅格地图
   step_on_kf: false # 是否在关键帧处暂停
 
   enable_lidar_loc_skip: false
@@ -60,11 +60,12 @@ system:
   pub_tf: true
 
 loop_closing:
-  loop_kf_gap: 20       # 每隔多少个关键帧检查一次
+  loop_kf_gap: 10       # 每隔多少个关键帧检查一次
   min_id_interval: 20   # 被检查的关键帧ID间隔
-  closest_id_th: 50     # 历史关键帧与当前帧的ID间隔
-  max_range: 30.0       # 候选帧的最大距离
+  closest_id_th: 20     # 历史关键帧与当前帧的ID间隔
+  max_range: 60.0       # 候选帧的最大距离
   ndt_score_th: 1.0     # ndt位姿分值
+  with_height: true
 
 
 ### localization ================================================================================================
@@ -87,6 +88,8 @@ lidar_loc:
   update_err_v: 0.2
   update_kf_dis: 2.0
   update_lidar_loc_score: 2.5
+  loc_on_kf: true
+  try_self_extrap: false
 maps:
   delete_when_unload: false
   dyn_cloud_policy: persistent

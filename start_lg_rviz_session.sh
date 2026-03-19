@@ -10,7 +10,7 @@ tmux new-session -d -s lg
 
 tmux new-window -t lg:0 -n 'lightning'
 tmux send-keys -t lg:0 "$ros2sh && ros2 run lightning run_slam_online --config src/lightning-lm-deep-robotics/config/default_deep_roboticsslam.yaml" C-m
-# ros2 run lightning run_slam_offline --input_bag ~/Downloads/m20/libraryf/libraryf_0.db3 --config ./src/lightning-lm-deep-robotics/config/default_deep_roboticsslam.yaml
+# ros2 run lightning run_slam_offline --input_bag ~/Downloads/m20/libraryf/libraryf_0.db3 --config ./src/lightning-lm/config/default_nclt.yaml 2>log/logoffline.txt
 
 # Tab 1: Static transform publisher
 tmux new-window -t lg:1 -n 'vis'

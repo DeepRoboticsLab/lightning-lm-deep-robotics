@@ -23,7 +23,7 @@ fasterlio:
 
   use_aa: false  # use anderson-acceleration
 
-  acc_cov: 1.0
+  acc_cov: 0.1
   gyr_cov: 0.1
   b_acc_cov: 0.0001
   b_gyr_cov: 0.0001
@@ -38,7 +38,7 @@ fasterlio:
 g2p5:
   esti_floor: false   # 是否动态估计地面
   lidar_height: 0.0   # 雷达安装高度
-  floor_height: -0.4   # 默认地面高度
+  floor_height: -1.2   # 默认地面高度
   min_th_floor: 0.50  # 距离地面这个高度的障碍物被扫入栅格地图中
   max_th_floor: 1.0  # 距离地面这个高度的障碍物被扫入栅格地图中
   grid_map_resolution: 0.03 # 栅格地图分辨率
@@ -76,7 +76,7 @@ loop_closing:
 lidar_loc:
   enable_dynamic_polygon: false
   enable_parking_static: true
-  enable_icp_adjust: true
+  enable_icp_adjust: false
   filter_intensity_max: 100.0
   filter_intensity_min: 10.0
   filter_z_max: 30.0
