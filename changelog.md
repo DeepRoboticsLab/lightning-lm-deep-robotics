@@ -91,3 +91,25 @@ Ctrl+b, c # 创建新标签
 tmux attach -t lg # 重新进入
 tmux kill-session -t lg # 删除会话
 ```
+
+### glog
+```bash
+./program > all.log 2>&1
+```
+
+ros2 run lightning run_slam_online --config src/lightning-lm-deep-robotics/config/default_deep_roboticsslam.yaml > all.log 2>&1
+
+## 为LIO增加IMU的朝向信息
+为loc_system增加IMU测量得到的orientation消息，但现在只用到了加速度和角速度，那么还需要更改eskf 的增加朝向测量。
+
+在 eskf.hpp 中引入 `ORIENTATION` 观测类型，并在 laser_mapping.cc 中实现相应的残差计算与雅可比矩阵映射。
+
+*   **坐标系对齐**：确保 IMU 输出的朝向坐标系与 LIO 初始化的世界坐标系一致。如果存在固定偏置，可以在 `OriObsModel` 中引入外参 $R_{il}$ 进行补偿。
+
+## 发布回环后的slam的实时位姿
+
+slam模式这里拿到的lio的state_points是没有经过回环的，参考MakeKF的位姿算法，基于当前帧相对lastKF的LIO位姿，就能得到真正的回环后的位姿。
+
+这样修改后，即使回环优化发生了较大的位姿跳变，您的实时发布位姿也会保持与全局地图的一致性。
+
+## 修复rviz不开时也会自动SavePath存轨迹

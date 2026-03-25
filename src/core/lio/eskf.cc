@@ -135,6 +135,8 @@ void ESKF::Update(ESKF::ObsType obs, const double& R) {
             gps_obs_func_(x_, custom_obs_model_);
         } else if (obs == ObsType::BIAS) {
             bias_obs_func_(x_, custom_obs_model_);
+        } else if (obs == ObsType::ORIENTATION) {
+            orientation_obs_func_(x_, custom_obs_model_);
         }
 
         if (use_aa_ && i > -1 && (obs == ObsType::LIDAR || obs == ObsType::WHEEL_SPEED_AND_LIDAR) &&
@@ -205,11 +207,18 @@ void ESKF::Update(ESKF::ObsType obs, const double& R) {
         }
 
         /// 处理各类观测模型
-        if (state_dim_ > dof_measurement) {
-            Eigen::MatrixXd h_x_cur = Eigen::MatrixXd::Zero(dof_measurement, state_dim_);
+        Eigen::MatrixXd h_x_cur = Eigen::MatrixXd::Zero(dof_measurement, state_dim_);
+        if (obs == ObsType::ORIENTATION) {
+            // For orientation observation, use the full h_x_ matrix
+            h_x_cur = custom_obs_model_.h_x_;
+        } else if (state_dim_ > dof_measurement) {
+            // For other observations, use the top-left 12 columns
             h_x_cur.topLeftCorner(dof_measurement, 12) = custom_obs_model_.h_x_;
-            custom_obs_model_.R_ = R * Eigen::MatrixXd::Identity(dof_measurement, dof_measurement);
+        }
+        
+        custom_obs_model_.R_ = R * Eigen::MatrixXd::Identity(dof_measurement, dof_measurement);
 
+        if (obs == ObsType::ORIENTATION || state_dim_ > dof_measurement) {
             Eigen::MatrixXd K =
                 P_ * h_x_cur.transpose() * (h_x_cur * P_ * h_x_cur.transpose() + custom_obs_model_.R_).inverse();
             K_r = K * custom_obs_model_.residual_;

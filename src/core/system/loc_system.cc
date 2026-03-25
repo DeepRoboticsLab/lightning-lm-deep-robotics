@@ -31,6 +31,7 @@ bool LocSystem::Init(const std::string &yaml_path) {
     options_.pub_tf_ = yaml.GetValue<bool>("system", "pub_tf", true);
     options_.pub_odom_ = yaml.GetValue<bool>("system", "pub_odom", true);
     options_.log_pose_opt_ = yaml.GetValue<bool>("system", "log_pose_opt", false);
+    options_.use_imu_init_ = yaml.GetValue<bool>("system", "use_imu_orient", false);
 
     // imu_topic_ = yaml.GetValue<std::string>("common", "imu_topic", "/IMU");
     // cloud_topic_ = yaml.GetValue<std::string>("common", "lidar_topic", "/LIDAR/POINTS");
@@ -71,6 +72,8 @@ bool LocSystem::Init(const std::string &yaml_path) {
             imu->linear_acceleration =
                 Vec3d(msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
             imu->angular_velocity = Vec3d(msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z);
+
+            imu->orientation = Quatd(msg->orientation.w, msg->orientation.x, msg->orientation.y, msg->orientation.z);
 
             ProcessIMU(imu);
         });
@@ -126,6 +129,12 @@ void LocSystem::SetInitPose(const SE3 &pose) {
 void LocSystem::ProcessIMU(const IMUPtr &imu) {
     if (loc_started_) {
         loc_->ProcessIMUMsg(imu);
+    } else if (options_.use_imu_init_) {
+        // 如果没有收到初始位姿，且开启了使用 IMU 的 orientation 进行初始化
+        // 假设初始位置为原点 (0,0,0)
+        LOG(INFO) << "Auto-initializing pose from IMU orientation (ENU): "
+                  << imu->orientation.coeffs().transpose();
+        SetInitPose(SE3(imu->orientation, Vec3d::Zero()));
     }
 }
 
@@ -190,6 +199,22 @@ void LocSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr &clo
                 path_.poses.push_back(ps);
                 path_pub_->publish(path_);
             }
+        } else if (path_pub_ != nullptr) {
+            geometry_msgs::msg::PoseStamped ps;
+            ps.header = cloud->header;
+            ps.header.frame_id = "map";
+            ps.pose.position.x = state.pos_.x();
+            ps.pose.position.y = state.pos_.y();
+            ps.pose.position.z = state.pos_.z();
+            auto q = state.rot_.unit_quaternion();
+            ps.pose.orientation.x = q.x();
+            ps.pose.orientation.y = q.y();
+            ps.pose.orientation.z = q.z();
+            ps.pose.orientation.w = q.w();
+
+            path_.header = ps.header;
+            path_.poses.push_back(ps);
+            path_pub_->publish(path_);
         }
 
 
@@ -282,6 +307,22 @@ void LocSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr 
                 path_.poses.push_back(ps);
                 path_pub_->publish(path_);
             }
+        } else if (path_pub_ != nullptr) {
+            geometry_msgs::msg::PoseStamped ps;
+            ps.header = cloud->header;
+            ps.header.frame_id = "map";
+            ps.pose.position.x = state.pos_.x();
+            ps.pose.position.y = state.pos_.y();
+            ps.pose.position.z = state.pos_.z();
+            auto q = state.rot_.unit_quaternion();
+            ps.pose.orientation.x = q.x();
+            ps.pose.orientation.y = q.y();
+            ps.pose.orientation.z = q.z();
+            ps.pose.orientation.w = q.w();
+
+            path_.header = ps.header;
+            path_.poses.push_back(ps);
+            path_pub_->publish(path_);
         }
 
 

@@ -36,6 +36,7 @@ class ESKF {
         ACC_AS_GRAVITY,         // 重力作为加计观测量
         GPS,                    // GPS/RTk 六自由度位姿
         BIAS,
+        ORIENTATION,            // IMU 朝向观测
     };
 
    public:
@@ -69,6 +70,7 @@ class ESKF {
         CustomObsFunction acc_as_gravity_obs_func_;  // 加计观测函数
         CustomObsFunction gps_obs_func_;
         CustomObsFunction bias_obs_func_;
+        CustomObsFunction orientation_obs_func_;     // 朝向观测函数
         int max_iterations_ = 4;
         StateVecType epsi_;    // 收敛条件
         bool use_aa_ = false;  // use anderson accleration
@@ -81,6 +83,7 @@ class ESKF {
         acc_as_gravity_obs_func_ = options.acc_as_gravity_obs_func_;
         gps_obs_func_ = options.gps_obs_func_;
         bias_obs_func_ = options.bias_obs_func_;
+        orientation_obs_func_ = options.orientation_obs_func_;
         maximum_iter_ = options.max_iterations_;
         limit_ = options.epsi_;
         use_aa_ = options.use_aa_;
@@ -118,7 +121,8 @@ class ESKF {
     CovType L_ = CovType ::Identity();
 
     CustomObservationModel custom_obs_model_;
-    CustomObsFunction lidar_obs_func_, wheelspeed_obs_func_, acc_as_gravity_obs_func_, gps_obs_func_, bias_obs_func_;
+    CustomObsFunction lidar_obs_func_, wheelspeed_obs_func_, acc_as_gravity_obs_func_, gps_obs_func_, bias_obs_func_,
+        orientation_obs_func_;
 
     int maximum_iter_ = 0;  // 最大迭代次数
     StateVecType limit_;

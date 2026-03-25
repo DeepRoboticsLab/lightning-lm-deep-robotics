@@ -45,7 +45,7 @@ g2p5:
 
 system:
   with_loop_closing: true # 是否需要回环检测
-  with_ui: false # 是否需要3D UI (RK3588请设为false)
+  with_ui: true # 是否需要3D UI (RK3588请设为false)
   with_2dui: false # 是否需要2D UI
   with_g2p5: true # 是否需要栅格地图
   step_on_kf: false # 是否在关键帧处暂停
@@ -62,6 +62,7 @@ system:
   lidar_odom_skip_num: 2
   map_path: ./data/zjulib/
   pub_tf: true
+  use_imu_orient: true
 
 loop_closing:
   loop_kf_gap: 10       # 每隔多少个关键帧检查一次
