@@ -18,7 +18,7 @@ Download the test dataset collected on the M20 robot here:
 *   **Google Drive:** [M20 Robot Dataset](https://drive.google.com/drive/folders/19T__ai6u5WCTwyWi3L4KC9gVZI-jiQM-?usp=drive_link)
 *   *Note: This dataset contains `lidar_data_bag`, which is used in the examples below.*
 
-We also have a larger and harder [dataset](https://drive.google.com/drive/folders/1dAoFarl1nb6sMvoKAEhMDwgeG8ujeo_f?usp=drive_link) recording the M20 robot moving around the main librady at Zhejiang University. This dataset contains aggressive and shaking movements of legged robots which currently this slam algorithm cannot solve. There are also videos recording what the robot looks like when collecting the lidar data. We chanllenge you guys to solve this problem.
+We also have a larger and harder [dataset](https://drive.google.com/drive/folders/1dAoFarl1nb6sMvoKAEhMDwgeG8ujeo_f?usp=drive_link) recording the M20 robot moving around the main librady at Zhejiang University. This dataset contains aggressive and shaking movements of legged robots. The lite3 lidar dataset can be downloaded from [here](https://drive.google.com/drive/folders/12alT4TuZwYC_xWUrex2quWOoMKXzpbQ2?usp=drive_link). You can use  `src/lightning-lm-deep-robotics/config/default_livox.yaml` to test this algorithm. There are also videos recording what the robot looks like when collecting the lidar data.
 
 ### M20 Hardware Configuration
 For details on how to configure and use the RoboSense LiDAR specific to the M20 robot, refer to the official documentation:
@@ -31,12 +31,12 @@ For details on how to configure and use the RoboSense LiDAR specific to the M20 
 Do **not** install `libgoogle-glog-dev` from apt — it conflicts with the thirdparty glog v0.6.0 (both register the same gflags flags at startup, causing a crash on launch). Install everything else:
 
 ```bash
-sudo apt install libopencv-dev libpcl-dev pcl-tools libyaml-cpp-dev libepoxy-dev libgflags-dev python3-wheel ros-humble-pcl-conversions 
+sudo apt install -y libopencv-dev libpcl-dev pcl-tools libyaml-cpp-dev libepoxy-dev libgflags-dev python3-wheel ros-humble-pcl-conversions 
 ```
 
 If `libgoogle-glog-dev` is already installed, remove it:
 ```bash
-sudo apt remove libgoogle-glog-dev libgoogle-glog0v5
+sudo apt remove -y libgoogle-glog-dev libgoogle-glog0v5
 ```
 
 ### Step 2: Build glog v0.6.0 from Thirdparty
