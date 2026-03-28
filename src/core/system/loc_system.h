@@ -33,6 +33,7 @@ class LocSystem {
         bool pub_odom_ = true;  // 是否发布nav_state和odometry
         bool log_pose_opt_ = false;  // 是否打印位姿
         bool use_init_pose_ = false; // 是否使用初始位姿
+        bool use_imu_init_ = false;   // 是否使用IMU orientation初始化
         SE3 init_pose_;              // 初始位姿
     };
 

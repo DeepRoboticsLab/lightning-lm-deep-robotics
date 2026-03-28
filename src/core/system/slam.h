@@ -57,6 +57,8 @@ class SlamSystem {
 
         bool step_on_kf_ = true;  // 是否在关键帧处暂停p
         bool log_pose_opt_ = false; // 是否打印位姿和速度
+
+        bool use_imu_init_ = false; // 是否使用IMU朝向进行初始化
     };
 
     using SaveMapService = srv::SaveMap;
@@ -106,6 +108,7 @@ class SlamSystem {
     std::shared_ptr<g2p5::G2P5> g2p5_ = nullptr;        // 栅格地图
 
     Keyframe::Ptr cur_kf_ = nullptr;
+    bool imu_inited_ = false;
 
     /// 实时模式下的ros2 node, subscribers
     rclcpp::Node::SharedPtr node_;

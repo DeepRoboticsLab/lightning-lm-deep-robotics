@@ -1,6 +1,6 @@
 # Lightning-LM Deployment Guide for Deep Robotics M20
 
-This guide outlines the specific steps, configurations, and commands required to deploy Lightning-LM on the Deep Robotics M20 platform equipped with a RoboSense LiDAR.
+This guide outlines the specific steps, configurations, and commands required to deploy Lightning-LM on the Deep Robotics M20 platform equipped with a RoboSense LiDAR. Watch the tutorial on [Youtube](https://youtu.be/1S8X03tm3-8?si=aPQY8Id6GBd-21Uc) or [Bilibili](https://www.bilibili.com/video/BV12YQZBqE1b/?share_source=copy_web&vd_source=57f46145c37bfb96f7583c9e02081590)!
 
 ## 1. Dataset & Hardware Setup
 

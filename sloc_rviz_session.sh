@@ -10,6 +10,7 @@ tmux new-session -d -s loc
 
 tmux new-window -t loc:0 -n 'lightning'
 tmux send-keys -t loc:0 "$ros2sh && ros2 run lightning run_loc_online --config src/lightning-lm-deep-robotics/config/default_deep_roboticsloc.yaml" C-m
+# ros2 run lightning run_loc_offline --config ./src/lightning-lm/config/default_deep_roboticsloc.yaml --input_bag ~/Downloads/m20/libraryf/libraryf_0.db3
 
 # Tab 1: Static transform publisher
 tmux new-window -t loc:1 -n 'vis'

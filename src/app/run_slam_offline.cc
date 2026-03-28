@@ -60,6 +60,9 @@ int main(int argc, char** argv) {
         return -1;
     }
 
+    // Register the signal handler
+    std::signal(SIGINT, SignalHandler);
+
     slam.StartSLAM("");
 
     lightning::YAML_IO yaml(FLAGS_config);
@@ -89,6 +92,7 @@ int main(int argc, char** argv) {
         .Go();
 
     slam.SaveMap("");
+    slam.SavePath("");
     Timer::PrintAll();
 
     LOG(INFO) << "done";

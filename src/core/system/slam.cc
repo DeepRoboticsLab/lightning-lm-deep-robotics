@@ -41,9 +41,25 @@ bool SlamSystem::Init(const std::string& yaml_path) {
     options_.log_pose_opt_ = yaml["system"]["log_pose_opt"] ? yaml["system"]["log_pose_opt"].as<bool>() : false;
     options_.enable_lidar_rviz_ = yaml["system"]["enable_lidar_loc_rviz"] ? yaml["system"]["enable_lidar_loc_rviz"].as<bool>() : false;
     options_.enable_path_rviz_ = yaml["system"]["enable_path_rviz"] ? yaml["system"]["enable_path_rviz"].as<bool>() : false;
+    options_.use_imu_init_ = yaml["system"]["use_imu_orient"] ? yaml["system"]["use_imu_orient"].as<bool>() : false;
     if(options_.enable_lidar_rviz_ && !options_.enable_path_rviz_) {
         options_.enable_path_rviz_ = true; // 发布路径时会包含位姿信息，方便调试
     }
+
+    LOG(INFO) << "SlamSystem Options: "
+              << "\n  online_mode: " << options_.online_mode_
+              << "\n  with_cc: " << options_.with_cc_
+              << "\n  with_gridmap: " << options_.with_gridmap_
+              << "\n  with_loop_closing: " << options_.with_loop_closing_
+              << "\n  with_visualization: " << options_.with_visualization_
+              << "\n  with_2dvisualization: " << options_.with_2dvisualization_
+              << "\n  pub_odom: " << options_.pub_odom_
+              << "\n  pub_tf: " << options_.pub_tf_
+              << "\n  enable_lidar_rviz: " << options_.enable_lidar_rviz_
+              << "\n  enable_path_rviz: " << options_.enable_path_rviz_
+              << "\n  step_on_kf: " << options_.step_on_kf_
+              << "\n  log_pose_opt: " << options_.log_pose_opt_
+              << "\n  use_imu_init: " << options_.use_imu_init_;
 
     if (yaml["system"]["map_path"]) {
         std::string map_path = yaml["system"]["map_path"].as<std::string>();
@@ -126,6 +142,8 @@ bool SlamSystem::Init(const std::string& yaml_path) {
                     Vec3d(msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
                 imu->angular_velocity =
                     Vec3d(msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z);
+                imu->orientation =
+                    Quatd(msg->orientation.w, msg->orientation.x, msg->orientation.y, msg->orientation.z);
 
                 ProcessIMU(imu);
             });
@@ -312,7 +330,7 @@ bool SlamSystem::SavePath(const std::string& path) {
         LOG(ERROR) << "Failed to open file: " << save_path;
         return false;
     }
-
+    file<<"timestamp px py pz qx qy qz qw\n";
     for (const auto& pose : path_.poses) {
         file << std::fixed << std::setprecision(5) 
              << pose.header.stamp.sec << "." << std::setfill('0') << std::setw(9) << pose.header.stamp.nanosec << " "
@@ -331,6 +349,14 @@ void SlamSystem::ProcessIMU(const lightning::IMUPtr& imu) {
     if (running_ == false) {
         return;
     }
+
+    if (options_.use_imu_init_ && !imu_inited_) {
+        LOG(INFO) << "Auto-initializing slam pose from IMU orientation (ENU): "
+                  << imu->orientation.coeffs().transpose();
+        lio_->SetInitPose(SE3(imu->orientation, Vec3d::Zero()));
+        imu_inited_ = true;
+    }
+
     lio_->ProcessIMU(imu);
 }
 
@@ -348,7 +374,7 @@ void SlamSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr& cl
         
         char log_buf[256];
         snprintf(log_buf, sizeof(log_buf), 
-                "pose: [%.4f, %.4f, %.4f]\tq: [%.4f, %.4f, %.4f, %.4f]\tvelocity: [%.3f, %.3f, %.3f]m/s",
+                "lio pose: [%.4f, %.4f, %.4f]\tq: [%.4f, %.4f, %.4f, %.4f]\tvelocity: [%.3f, %.3f, %.3f]m/s",
                 state.pos_.x(), state.pos_.y(), state.pos_.z(),
                 q.x(), q.y(), q.z(), q.w(),
                 state.vel_.x(), state.vel_.y(), state.vel_.z());
@@ -360,20 +386,23 @@ void SlamSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr& cl
         //        state.vel_.x(), state.vel_.y(), state.vel_.z());
         // fflush(stdout);
     }
-
+    static uint8_t count = 0;
     if (nav_state_pub_ != nullptr) {
         auto state = lio_->GetState();
+        // 真正的回环后的位姿，而非EKF的里程计位姿
+        SE3 pose_opt = lio_->GetOptPose();
+        auto q_opt = pose_opt.unit_quaternion();
+
         msg::NavState ns;
         ns.header.stamp = cloud->header.stamp;
         ns.header.frame_id = "map";
-        ns.pose.position.x = state.pos_.x();
-        ns.pose.position.y = state.pos_.y();
-        ns.pose.position.z = state.pos_.z();
-        auto q = state.rot_.unit_quaternion();
-        ns.pose.orientation.x = q.x();
-        ns.pose.orientation.y = q.y();
-        ns.pose.orientation.z = q.z();
-        ns.pose.orientation.w = q.w();
+        ns.pose.position.x = pose_opt.translation().x();
+        ns.pose.position.y = pose_opt.translation().y();
+        ns.pose.position.z = pose_opt.translation().z();
+        ns.pose.orientation.x = q_opt.x();
+        ns.pose.orientation.y = q_opt.y();
+        ns.pose.orientation.z = q_opt.z();
+        ns.pose.orientation.w = q_opt.w();
         ns.velocity.x = state.vel_.x();
         ns.velocity.y = state.vel_.y();
         ns.velocity.z = state.vel_.z();
@@ -403,13 +432,42 @@ void SlamSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr& cl
 
         if (options_.enable_path_rviz_ && path_pub_ != nullptr) {
             geometry_msgs::msg::PoseStamped ps;
+            if(count<10){
+                LOG(INFO) << "publishing path pose: ["
+                          << ns.pose.position.x << ", " << ns.pose.position.y << ", " << ns.pose.position.z<< "]";
+                count++;
+            }
             ps.header = cloud->header;
             ps.pose = ns.pose;
             path_.header = ns.header;
             path_.poses.push_back(ps);
             path_pub_->publish(path_);
         }
-    }
+    } else if (options_.enable_path_rviz_) {
+        // 离线模式或未启用 pub_odom 时，手动维护 path_
+        SE3 pose_opt = lio_->GetOptPose();
+        auto q_opt = pose_opt.unit_quaternion();
+
+        geometry_msgs::msg::PoseStamped ps;
+        ps.header = cloud->header;
+        ps.header.frame_id = "map";
+        ps.pose.position.x = pose_opt.translation().x();
+        ps.pose.position.y = pose_opt.translation().y();
+        ps.pose.position.z = pose_opt.translation().z();
+        ps.pose.orientation.x = q_opt.x();
+        ps.pose.orientation.y = q_opt.y();
+        ps.pose.orientation.z = q_opt.z();
+        ps.pose.orientation.w = q_opt.w();
+
+        if (count < 10) {
+            LOG(INFO) << "recording path pose (no pub): [" << ps.pose.position.x << ", " << ps.pose.position.y
+                      << ", " << ps.pose.position.z << "]";
+            count++;
+        }
+
+        path_.header = ps.header;
+        path_.poses.push_back(ps);
+    } 
 
     if (options_.enable_lidar_rviz_ && cloud_pub_ != nullptr) {
         auto scan_world = lio_->GetScanDownWorld();
@@ -472,7 +530,7 @@ void SlamSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr
         
         char log_buf[256];
         snprintf(log_buf, sizeof(log_buf), 
-                "pose: [%.4f, %.4f, %.4f]\tq: [%.4f, %.4f, %.4f, %.4f]\tvelocity: [%.3f, %.3f, %.3f]m/s",
+                "lio pose: [%.4f, %.4f, %.4f]\tq: [%.4f, %.4f, %.4f, %.4f]\tvelocity: [%.3f, %.3f, %.3f]m/s",
                 state.pos_.x(), state.pos_.y(), state.pos_.z(),
                 q.x(), q.y(), q.z(), q.w(),
                 state.vel_.x(), state.vel_.y(), state.vel_.z());
@@ -484,20 +542,23 @@ void SlamSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr
         //        state.vel_.x(), state.vel_.y(), state.vel_.z());
         // fflush(stdout);
     }
-
+    static uint8_t count = 0;
     if (nav_state_pub_ != nullptr) {
         auto state = lio_->GetState();
+        // 真正的回环后的位姿，而非EKF的里程计位姿
+        SE3 pose_opt = lio_->GetOptPose();
+        auto q_opt = pose_opt.unit_quaternion();
+
         msg::NavState ns;
         ns.header.stamp = cloud->header.stamp;
         ns.header.frame_id = "map";
-        ns.pose.position.x = state.pos_.x();
-        ns.pose.position.y = state.pos_.y();
-        ns.pose.position.z = state.pos_.z();
-        auto q = state.rot_.unit_quaternion();
-        ns.pose.orientation.x = q.x();
-        ns.pose.orientation.y = q.y();
-        ns.pose.orientation.z = q.z();
-        ns.pose.orientation.w = q.w();
+        ns.pose.position.x = pose_opt.translation().x();
+        ns.pose.position.y = pose_opt.translation().y();
+        ns.pose.position.z = pose_opt.translation().z();
+        ns.pose.orientation.x = q_opt.x();
+        ns.pose.orientation.y = q_opt.y();
+        ns.pose.orientation.z = q_opt.z();
+        ns.pose.orientation.w = q_opt.w();
         ns.velocity.x = state.vel_.x();
         ns.velocity.y = state.vel_.y();
         ns.velocity.z = state.vel_.z();
@@ -533,6 +594,30 @@ void SlamSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr
             path_.poses.push_back(ps);
             path_pub_->publish(path_);
         }
+    }else if (options_.enable_path_rviz_) {
+        // 离线模式或未启用 pub_odom 时，手动维护 path_
+        SE3 pose_opt = lio_->GetOptPose();
+        auto q_opt = pose_opt.unit_quaternion();
+
+        geometry_msgs::msg::PoseStamped ps;
+        ps.header = cloud->header;
+        ps.header.frame_id = "map";
+        ps.pose.position.x = pose_opt.translation().x();
+        ps.pose.position.y = pose_opt.translation().y();
+        ps.pose.position.z = pose_opt.translation().z();
+        ps.pose.orientation.x = q_opt.x();
+        ps.pose.orientation.y = q_opt.y();
+        ps.pose.orientation.z = q_opt.z();
+        ps.pose.orientation.w = q_opt.w();
+
+        if (count < 10) {
+            LOG(INFO) << "recording path pose (no pub): [" << ps.pose.position.x << ", " << ps.pose.position.y
+                      << ", " << ps.pose.position.z << "]";
+            count++;
+        }
+
+        path_.header = ps.header;
+        path_.poses.push_back(ps);
     }
 
     if (options_.enable_lidar_rviz_ && cloud_pub_ != nullptr) {

@@ -24,8 +24,10 @@ bool LaserMapping::Init(const std::string &config_yaml) {
     eskf_options.max_iterations_ = fasterlio::NUM_MAX_ITERATIONS;
     eskf_options.epsi_ = 1e-3 * Eigen::Matrix<double, 23, 1>::Ones();
     eskf_options.lidar_obs_func_ = [this](NavState &s, ESKF::CustomObservationModel &obs) { ObsModel(s, obs); };
+    eskf_options.orientation_obs_func_ = [this](NavState &s, ESKF::CustomObservationModel &obs) { OriObsModel(s, obs); };
     eskf_options.use_aa_ = use_aa_;
     kf_.Init(eskf_options);
+    kf_imu_.Init(eskf_options);
 
     return true;
 }
@@ -62,6 +64,7 @@ bool LaserMapping::LoadParamsFromYAML(const std::string &yaml_file) {
         ivox_options_.resolution_ = yaml["fasterlio"]["ivox_grid_resolution"].as<float>();
         ivox_nearby_type = yaml["fasterlio"]["ivox_nearby_type"].as<int>();
         use_aa_ = yaml["fasterlio"]["use_aa"].as<bool>();
+        use_imu_orient_ = yaml["system"]["use_imu_orient"] ? yaml["system"]["use_imu_orient"].as<bool>() : false;
 
         skip_lidar_num_ = yaml["fasterlio"]["skip_lidar_num"].as<int>();
         enable_skip_lidar_ = skip_lidar_num_ > 0;
@@ -126,6 +129,21 @@ LaserMapping::LaserMapping(Options options) : options_(options) {
     p_imu_.reset(new ImuProcess());
 }
 
+void LaserMapping::SetInitPose(const SE3 &pose) {
+    LOG(INFO) << "initial pose lio: " << pose.so3().unit_quaternion().coeffs().transpose();
+    auto x = kf_imu_.GetX();
+    x.rot_ = SO3(pose.unit_quaternion());
+    x.pos_ = pose.translation();
+    kf_imu_.ChangeX(x);
+
+    x = kf_.GetX();
+    x.rot_ = SO3(pose.unit_quaternion());
+    x.pos_ = pose.translation();
+    kf_.ChangeX(x);
+
+    LOG(INFO) << "set initial translatoin in laser mapping: " << pose.translation().transpose();
+}
+
 void LaserMapping::ProcessIMU(const lightning::IMUPtr &imu) {
     publish_count_++;
 
@@ -141,6 +159,13 @@ void LaserMapping::ProcessIMU(const lightning::IMUPtr &imu) {
         /// 更新最新imu状态
         kf_imu_.Predict(timestamp - last_timestamp_imu_, p_imu_->Q_, imu->angular_velocity, imu->linear_acceleration);
 
+        // 使用 IMU 朝向观测进行更新。
+        // 这里将观测方差固定为 0.01 rad^2（约 0.1 rad ≈ 5.7° 的 1σ 误差），作为中等精度 IMU 的经验值。
+        // 若使用更高/更低精度的 IMU，可根据陀螺噪声特性离线标定后调整该值，以平衡预测与观测的权重。
+        if (use_imu_orient_) {
+            kf_imu_.Update(ESKF::ObsType::ORIENTATION, 0.01);
+        }
+
         // LOG(INFO) << "newest wrt lidar: " << timestamp - kf_.GetX().timestamp_;
 
         /// 更新ui
@@ -150,6 +175,7 @@ void LaserMapping::ProcessIMU(const lightning::IMUPtr &imu) {
     }
 
     last_timestamp_imu_ = timestamp;
+    last_imu_ = imu;
 
     imu_buffer_.emplace_back(imu);
 }
@@ -242,6 +268,10 @@ bool LaserMapping::Run() {
             plane_coef_.resize(cur_pts, Vec4f::Zero());
 
             auto old_state = kf_.GetX();
+
+            if (use_imu_orient_) {
+                kf_.Update(ESKF::ObsType::ORIENTATION, 0.01);
+            }
 
             kf_.Update(ESKF::ObsType::LIDAR, 1e-3);
             state_point_ = kf_.GetX();
@@ -532,6 +562,55 @@ void LaserMapping::MapIncremental() {
  * @param s kf state
  * @param ekfom_data H matrix
  */
+void LaserMapping::OriObsModel(NavState &s, ESKF::CustomObservationModel &obs) {
+    if (last_imu_ == nullptr) {
+        obs.valid_ = false;
+        return;
+    }
+
+    // r = log(R_meas^-1 * R_est)
+    Quatd q_meas = last_imu_->orientation;
+    SO3 R_meas(q_meas);
+    SO3 R_est = s.rot_;
+    obs.h_x_ = Eigen::Matrix<double, 3, 23>::Zero();
+    // The rotation Jacobian is linearized assuming small orientation errors:
+    // for r = log(R_meas^{-1} * R_est), dr/d(delta_theta) ≈ I_3 when delta_theta is small.
+    // This identity approximation may become inaccurate for large orientation discrepancies,
+    // potentially affecting filter consistency or convergence in such cases.
+    obs.residual_ = (R_meas.inverse() * R_est).log();
+
+    if (obs.residual_.norm() > 0.5) { // 约 28.6 度
+        LOG(WARNING) << "IMU orientation residual is too large: " << obs.residual_.norm()
+                     << ". q_est: " << R_est.unit_quaternion().coeffs().transpose()
+                     << ", q_meas: " << q_meas.coeffs().transpose();
+        
+        if (!flg_EKF_inited_) {
+            LOG(INFO) << "EKF not inited, forcing state to match IMU orientation";
+            s.rot_ = R_meas;
+            obs.residual_.setZero();
+        }
+    }
+
+    obs.h_x_ = Eigen::Matrix<double, 3, 23>::Zero();
+    obs.h_x_.block<3, 3>(0, 3) = Mat3d::Identity();
+}
+// void QuaternionObsModel(NavState &s, ESKF::CustomObservationModel &obs,   
+//                        const Quatd& measured_quat) {  
+//     // 获取当前状态的四元数  
+//     Quatd current_quat = s.rot_;  
+      
+//     // 计算四元数误差 (可以使用对数映射)  
+//     Quatd error_quat = measured_quat.inverse() * current_quat;  
+//     Vec3d error_vec = math::QuatToLog(error_quat);  
+      
+//     // 设置残差 (3维：roll, pitch, yaw误差)  
+//     obs.residual_.resize(3);  
+//     obs.residual_ = error_vec;  
+      
+//     // 设置雅可比矩阵 (3x23，只对旋转部分有偏导)  
+//     obs.h_x_ = Eigen::MatrixXd::Zero(3, 23);  
+//     obs.h_x_.block<3, 3>(0, 3) = Eigen::Matrix3d::Identity();  // 对旋转的偏导  
+// }
 void LaserMapping::ObsModel(NavState &s, ESKF::CustomObservationModel &obs) {
     int cnt_pts = scan_down_body_->size();
 
@@ -712,7 +791,7 @@ CloudPtr LaserMapping::GetGlobalMap(bool use_lio_pose, bool use_voxel, float res
 
         *global_map += *cloud_trans;
 
-        LOG(INFO) << "kf " << kf->GetID() << ", pose: " << kf->GetOptPose().translation().transpose();
+        // LOG(INFO) << "kf " << kf->GetID() << ", pose: " << kf->GetOptPose().translation().transpose();
     }
 
     CloudPtr global_map_filtered(new PointCloudType);
@@ -747,6 +826,16 @@ CloudPtr LaserMapping::GetRecentCloud() {
     }
 
     return lidar_buffer_.front();
+}
+
+SE3 LaserMapping::GetOptPose() const {
+    if (last_kf_ == nullptr) {
+        return state_point_.GetPose();
+    }
+
+    // 基于当前帧相对lastKF的LIO位姿，得到回环后的位姿
+    SE3 delta = last_kf_->GetLIOPose().inverse() * state_point_.GetPose();
+    return last_kf_->GetOptPose() * delta;
 }
 
 }  // namespace lightning

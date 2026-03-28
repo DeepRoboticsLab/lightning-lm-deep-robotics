@@ -323,9 +323,13 @@ void Localization::Finish() {
 
 void Localization::SetExternalPose(const Eigen::Quaterniond& q, const Eigen::Vector3d& t) {
     UL lock(global_mutex_);
+    LOG(INFO) << "Localization setting external pose: " << t.transpose() << ", " << q.coeffs().transpose();
     /// 设置外部重定位的pose
     if (lidar_loc_) {
         lidar_loc_->SetInitialPose(SE3(q, t));
+    }
+    if (lio_) {
+        lio_->SetInitPose(SE3(q, t));
     }
 }
 

@@ -101,6 +101,7 @@ class RosbagIO {
                 Vec3d(msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
             // constant::kGRAVITY;
             imu->angular_velocity = Vec3d(msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z);
+            imu->orientation = Quatd(msg->orientation.w, msg->orientation.x, msg->orientation.y, msg->orientation.z);
 
             return f(imu);
         });
