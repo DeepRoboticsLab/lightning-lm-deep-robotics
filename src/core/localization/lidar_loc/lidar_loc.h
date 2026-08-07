@@ -46,10 +46,10 @@ class LidarLoc {
         bool enable_icp_adjust_ = false;               // 是否使用icp调整ndt匹配结果提高定位精度
 
         /// 点云过滤
-        float filter_z_min_ = -1.0;
+        // float filter_z_min_ = -1.0;
         float filter_z_max_ = 30.0;
-        float filter_intensity_min_ = 10.0;
-        float filter_intensity_max_ = 100.0;
+        // float filter_intensity_min_ = 10.0;
+        // float filter_intensity_max_ = 100.0;
 
         /// 地图配置
         TiledMap::Options map_option_ = TiledMap::Options();
@@ -106,8 +106,6 @@ class LidarLoc {
     /// @brief 激光定位重置接口
     void ResetLastPose(const SE3& last_pose);
 
-    std::shared_ptr<TiledMap> GetMap() { return map_; }
-
     /**
      * @brief 激光地图匹配
      * @param pose       预测位姿
@@ -135,7 +133,6 @@ class LidarLoc {
 
     /// 激光定位是否认为LO有效
     bool LidarLocThinkLOReliable() { return lo_reliable_; }
-
 
    private:
     // 内部函数  ==========================================================================

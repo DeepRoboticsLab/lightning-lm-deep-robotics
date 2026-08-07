@@ -361,29 +361,6 @@ void TiledMap::LoadOnPose(const SE3& pose) {
     last_load_grid_set_ = true;
 }
 
-CloudPtr TiledMap::GetStaticCloud2() {
-    CloudPtr cloud(new PointCloudType);
-    cloud->reserve(100000 * 25);
-
-    UL lock(static_data_mutex_);
-    for (auto& idx : loaded_chunks_) {
-        *cloud += *static_chunks_[idx]->cloud_;
-    }
-
-    return cloud;
-}
-std::map<int, CloudPtr> TiledMap::GetStaticCloud() {
-    std::map<int, CloudPtr> cloud;
-
-    UL lock(static_data_mutex_);
-    for (auto& idx : loaded_chunks_) {
-        CloudPtr c(new PointCloudType);
-        *c += *static_chunks_[idx]->cloud_;
-        cloud.emplace(static_chunks_[idx]->id_, c);
-    }
-
-    return cloud;
-}
 CloudPtr TiledMap::GetAllMap() {
     CloudPtr cloud(new PointCloudType);
     cloud->reserve(100000 * 25);
@@ -404,6 +381,19 @@ CloudPtr TiledMap::GetAllMap() {
                 }
             }
         }
+    }
+
+    return cloud;
+}
+
+std::map<int, CloudPtr> TiledMap::GetStaticCloud() {
+    std::map<int, CloudPtr> cloud;
+
+    UL lock(static_data_mutex_);
+    for (auto& idx : loaded_chunks_) {
+        CloudPtr c(new PointCloudType);
+        *c += *static_chunks_[idx]->cloud_;
+        cloud.emplace(static_chunks_[idx]->id_, c);
     }
 
     return cloud;

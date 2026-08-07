@@ -23,22 +23,14 @@ int main(int argc, char** argv) {
     rclcpp::init(argc, argv);
 
     LocSystem::Options opt;
-    // 默认开启，Init内会读取yaml覆盖这些值
-    opt.pub_tf_ = true;
-    opt.pub_odom_ = true;
-    opt.log_pose_opt_ = true;
     LocSystem loc(opt);
 
     if (!loc.Init(FLAGS_config)) {
         LOG(ERROR) << "failed to init loc";
     }
 
-    /// 如果没有设置初始位姿，则从0开始
-    if (opt.use_init_pose_) {
-        loc.SetInitPose(opt.init_pose_);
-    } else {
-        loc.SetInitPose(SE3());
-    }
+    /// 默认起点开始定位
+    loc.SetInitPose(SE3());
     loc.Spin();
 
     rclcpp::shutdown();

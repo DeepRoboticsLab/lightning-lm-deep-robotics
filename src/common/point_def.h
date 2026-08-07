@@ -17,14 +17,24 @@
 struct PointXYZIT {
     PCL_ADD_POINT4D
     PCL_ADD_INTENSITY
-    double timestamp;
+    double time;
     PointXYZIT() {}
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 };
 
 POINT_CLOUD_REGISTER_POINT_STRUCT(PointXYZIT,
-                                  (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)
-                                  (double, timestamp,timestamp))
+                                  (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(double, time, time))
+struct PointRobotSense {
+    PCL_ADD_POINT4D
+    PCL_ADD_INTENSITY
+    double timestamp = 0;
+    PointRobotSense() {}
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+};
+
+POINT_CLOUD_REGISTER_POINT_STRUCT(PointRobotSense,
+                                  (float, x, x)(float, y, y)(float, z, z)(float, intensity,
+                                                                          intensity)(double, timestamp, timestamp))
 
 namespace velodyne_ros {
 struct EIGEN_ALIGN16 Point {
@@ -71,42 +81,6 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(ouster_ros::Point,
 )
 // clang-format on
 
-namespace robosense_ros {
-    struct EIGEN_ALIGN16 Point{
-        PCL_ADD_POINT4D
-        float intensity;
-        uint16_t ring;
-        double timestamp;
-        EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    };
-} // namespace robosense_ros
-
-// clang-format off
-POINT_CLOUD_REGISTER_POINT_STRUCT(robosense_ros::Point,
-    (float, x, x) (float, y, y) (float, z, z) (float, intensity, intensity)
-    (uint16_t, ring, ring) (double, timestamp, timestamp)
-)
-
-namespace livox_ros {
-struct EIGEN_ALIGN16 LivoxPointXyzrtlt {
-    PCL_ADD_POINT4D;
-    float intensity;    /**< Reflectivity   */
-    std::uint8_t tag;   /**< Livox point tag   */
-    std::uint8_t line;  /**< Laser line id     */
-    double timestamp;   /**< Timestamp of point*/
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-};
-}
-
-POINT_CLOUD_REGISTER_POINT_STRUCT(livox_ros::LivoxPointXyzrtlt,
-    (float, x, x)
-    (float, y, y)
-    (float, z, z)
-    (float, intensity, intensity)
-    (std::uint8_t, tag, tag)
-    (std::uint8_t, line, line)
-    (double, timestamp, timestamp)
-)
 namespace lightning {
 
 /// 各类点云的缩写

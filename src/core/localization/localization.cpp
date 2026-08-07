@@ -3,6 +3,9 @@
 
 #include "core/localization/lidar_loc/lidar_loc.h"
 #include "core/localization/localization.h"
+
+#include <opencv2/highgui.hpp>
+
 #include "core/localization/pose_graph/pgo.h"
 #include "io/yaml_io.h"
 #include "ui/pangolin_window.h"
@@ -43,7 +46,7 @@ bool Localization::Init(const std::string& yaml_path, const std::string& global_
 
     if (options_.with_ui_) {
         ui_ = std::make_shared<ui::PangolinWindow>();
-        ui_->SetCurrentScanSize(10);
+        ui_->SetCurrentScanSize(1);
         ui_->Init();
 
         lidar_loc_->SetUI(ui_);
@@ -109,6 +112,10 @@ bool Localization::Init(const std::string& yaml_path, const std::string& global_
     int lidar_type = yaml.GetValue<int>("fasterlio", "lidar_type");
     preprocess_->NumScans() = yaml.GetValue<int>("fasterlio", "scan_line");
     preprocess_->PointFilterNum() = yaml.GetValue<int>("fasterlio", "point_filter_num");
+    float height_max = yaml.GetValue<float>("roi", "height_max");
+    float height_min = yaml.GetValue<float>("roi", "height_min");
+
+    preprocess_->SetHeightROI(height_max, height_min);
 
     LOG(INFO) << "lidar_type " << lidar_type;
     if (lidar_type == 1) {
@@ -120,10 +127,9 @@ bool Localization::Init(const std::string& yaml_path, const std::string& global_
     } else if (lidar_type == 3) {
         preprocess_->SetLidarType(LidarType::OUST64);
         LOG(INFO) << "Using OUST 64 Lidar";
-    } 
-    else if (lidar_type == 4) {
-        preprocess_->SetLidarType(LidarType::RoboSense);
-        LOG(INFO) << "Using RoboSense Lidar";
+    } else if (lidar_type == 4) {
+        preprocess_->SetLidarType(LidarType::ROBOSENSE);
+        LOG(INFO) << "Using OUST 64 Lidar";
     } else {
         LOG(WARNING) << "unknown lidar_type";
     }
@@ -187,6 +193,9 @@ void Localization::LidarOdomProcCloud(CloudPtr cloud) {
     //           << lo_state.GetPose().translation().transpose();
 
     /// 获得lio的关键帧
+
+    auto scan = lio_->GetProjCloud();
+
     if (options_.loc_on_kf_) {
         auto kf = lio_->GetKeyframe();
         if (kf == lio_kf_) {
@@ -198,9 +207,13 @@ void Localization::LidarOdomProcCloud(CloudPtr cloud) {
             return;
         }
 
+        // if (ui_) {
+        //     ui_->UpdateKF(kf);
+        // }
+
         lio_kf_ = kf;
 
-        auto scan = lio_->GetScanUndist();
+        // auto scan = lio_->GetScanUndist();
 
         if (options_.online_mode_) {
             lidar_loc_proc_cloud_.AddMessage(scan);
@@ -208,7 +221,7 @@ void Localization::LidarOdomProcCloud(CloudPtr cloud) {
             LidarLocProcCloud(scan);
         }
     } else {
-        auto scan = lio_->GetScanUndist();
+        // auto scan = cloud;   // 这个cloud应该差一个外参
 
         if (options_.online_mode_) {
             lidar_loc_proc_cloud_.AddMessage(scan);
@@ -235,6 +248,10 @@ void Localization::LidarLocProcCloud(CloudPtr scan_undist) {
         LOG(INFO) << "loc_state: " << loc_state->data;
         loc_state_callback_(*loc_state);
     }
+
+    // cv::Mat img(100, 100, CV_8UC3, cv::Scalar(255, 255, 255));
+    // cv::imshow("img", img);
+    // cv::waitKey(0);
 }
 
 void Localization::ProcessIMUMsg(IMUPtr imu) {
@@ -323,13 +340,9 @@ void Localization::Finish() {
 
 void Localization::SetExternalPose(const Eigen::Quaterniond& q, const Eigen::Vector3d& t) {
     UL lock(global_mutex_);
-    LOG(INFO) << "Localization setting external pose: " << t.transpose() << ", " << q.coeffs().transpose();
     /// 设置外部重定位的pose
     if (lidar_loc_) {
         lidar_loc_->SetInitialPose(SE3(q, t));
-    }
-    if (lio_) {
-        lio_->SetInitPose(SE3(q, t));
     }
 }
 

@@ -39,43 +39,12 @@ If `libgoogle-glog-dev` is already installed, remove it:
 sudo apt remove -y libgoogle-glog-dev libgoogle-glog0v5
 ```
 
-### Step 2: Build glog v0.6.0 from Thirdparty
-
-```bash
-cd src/lightning-lm-deep-robotics/thirdparty/glog
-mkdir build && cd build
-cmake -DBUILD_SHARED_LIBS=ON -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release ..
-make -j$(nproc)
-sudo make install
-sudo ldconfig
-cd ../../../../..
-```
-
-### Step 3: Build Pangolin v0.9.3 from Thirdparty
-
-```bash
-cd src/lightning-lm-deep-robotics/thirdparty/Pangolin
-mkdir build && cd build
-cmake -DBUILD_EXAMPLES=OFF -DBUILD_TOOLS=OFF -DCMAKE_CXX_FLAGS="-Wno-error" -DCMAKE_BUILD_TYPE=Release ..
-make -j$(nproc)
-sudo make install
-sudo ldconfig
-cd ../../../../..
-```
-
-### Step 4: Build lightning-lm
-
-**Standard build** (PC/Server with sufficient RAM):
-```bash
-source /opt/ros/humble/setup.bash
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
-source install/setup.bash
-```
+### Step 2: Build lightning-lm
 
 **Low memory build** (recommended for on-board computers such as M20/RK3588, to avoid OOM crashes):
 ```bash
 export MAKEFLAGS="-j3"
-source /opt/ros/humble/setup.bash
+source /opt/robot/scripts/setup_ros2.sh
 colcon build --parallel-workers 3 --executor sequential --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
 ```
@@ -103,7 +72,7 @@ The primary configuration file for the M20 robot is located at:
 
 2.  **Launch the Online SLAM Node:**
     ```bash
-    ros2 run lightning run_slam_online --config src/lightning-lm-deep-robotics/config/default_deep_robotics.yaml
+    ros2 run lightning run_slam_online --config config/default_nclt.yaml
     ```
 
 3.  **Save the Map:**
@@ -120,7 +89,7 @@ The primary configuration file for the M20 robot is located at:
 
 1.  **Run Offline SLAM:**
     ```bash
-    ros2 run lightning run_slam_offline --input_bag /home/msy/Downloads/m20/lidar_data_bag/lidar_data_bag_0.db3 --config ./src/lightning-lm-deep-robotics/config/default_deep_robotics.yaml
+    ros2 run lightning run_slam_offline --input_bag /home/msy/Downloads/m20/lidar_data_bag/lidar_data_bag_0.db3 --config config/default_nclt.yaml
     ```
     *Note: The system automatically saves results to the `data/new_map` directory upon completion.*
 
