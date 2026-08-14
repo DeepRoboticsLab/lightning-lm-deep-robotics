@@ -1,13 +1,11 @@
-# 针对NCLT的配置
 common:
-  dataset: "nclt"
   lidar_topic: "/LIDAR/POINTS"
-  livox_lidar_topic: "/livox/lidar"
+  livox_lidar_topic: "/livox/lidar" # 不使用，也要有，否则会报错
   imu_topic: "/IMU"
 
 # fasterlio 参数
 fasterlio:
-  lidar_type: 4               # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR,
+  lidar_type: 4                # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR,  4 or RoboSense LiDAR
   scan_line: 32
   blind: 0.5                # 盲区，小于盲区距离的不会处理
   time_scale: 1e-3             # 兼容不同数据集的时间单位，仅对Velodyne LiDAR(lidar_type=2)生效
@@ -29,7 +27,7 @@ fasterlio:
   b_acc_cov: 0.0001
   b_gyr_cov: 0.0001
   extrinsic_est_en: false      # true: enable the online estimation of IMU-LiDAR extrinsic
-  extrinsic_T: [ 0, 0, 0.0 ]
+  extrinsic_T: [ 0, 0, 0 ]
   extrinsic_R: [ 1, 0, 0,
                  0, 1, 0,
                  0, 0, 1 ]
@@ -50,13 +48,21 @@ system:
   with_2dui: false # 是否需要2D UI
   with_g2p5: false # 是否需要栅格地图
   step_on_kf: false # 是否在关键帧处暂停
-
+  log_pose_opt: false # 命令行打印位置和速度
+  pub_odom: true
   enable_lidar_loc_skip: false
   enable_lidar_loc_rviz: false
+  enable_path_rviz: false
   enable_lidar_odom_skip: false
+  evaluation: false
   lidar_loc_skip_num: 4
   lidar_odom_skip_num: 2
-  map_path: ./data/new_map/
+  map_path: ./data/office4f/
+  use_init_pose: false
+  # 初始位置 [x, y, z]
+  init_pos: [0.0, 0.0, 0.0]
+  # 初始四元数 [x, y, z, w]
+  init_quat: [0.0, 0.0, 0.0, 1.0]
   pub_tf: true
 
 loop_closing:
@@ -64,7 +70,7 @@ loop_closing:
   min_id_interval: 20   # 被检查的关键帧ID间隔
   closest_id_th: 20     # 历史关键帧与当前帧的ID间隔
   max_range: 60.0       # 候选帧的最大距离
-  ndt_score_th: 1.0     # ndt位姿分值
+  ndt_score_th: 2.0     # ndt位姿分值
   with_height: true
 
 
@@ -78,12 +84,12 @@ lidar_loc:
   filter_z_max: 30.0
   filter_z_min: -1.0
   force_2d: false
-  grid_search_angle_range: 180.0
-  grid_search_angle_step: 60
+  grid_search_angle_range: 30.0
+  grid_search_angle_step: 6
   lidar_loc_odom_th: 0.5
   init_with_fp: true
   min_init_confidence: 1.8
-  update_dynamic_cloud: true
+  update_dynamic_cloud: false
   update_err_h: 0.2
   update_err_v: 0.2
   update_kf_dis: 2.0
@@ -92,25 +98,29 @@ lidar_loc:
   try_self_extrap: false
 maps:
   delete_when_unload: false
-  dyn_cloud_policy: persistent
-  load_dyn_cloud: true
+  dyn_cloud_policy: short
+  load_dyn_cloud: false
   load_map_size: 2
   max_pts_dyn_chunk: 100000
-  save_dyn_when_quit: true
+  save_dyn_when_quit: false
   save_dyn_when_unload: false
   unload_map_size: 4
   with_dyn_area: false
-pgo:
-  dr_ang_noise: 0.5
-  dr_pos_noise: 1.0
-  dr_pos_noise_ratio: 1.0
-  lidar_loc_ang_noise: 1.0
-  lidar_loc_outlier_th: 5.0
-  lidar_loc_pos_noise: 0.3
-  lidar_odom_ang_noise: 1.0
-  lidar_odom_pos_noise: 0.3
-  pgo_frame_converge_ang_th: 1.0
-  pgo_frame_converge_pos_th: 0.05
+# fuse LIO, LiDAR localization( requires a pre-built map), Dead Reckoning, RTK
+pgo:  
+  # Trust DR more during severe motion (decrease noise values)  
+  dr_pos_noise: 2.0         # Reduce from 1.0  
+  dr_ang_noise: 0.7         # Reduce from 0.5  
+  # Trust LIO and lidar_loc less (increase noise values)  
+  lidar_odom_pos_noise: 0.3  # Increase from 0.3  
+  lidar_odom_ang_noise: 1.0  # Increase from 1.0  
+  lidar_loc_pos_noise: 0.4   # Increase from 0.3  
+  lidar_loc_ang_noise: 0.3   # Increase from 1.0  
+  # More lenient outlier rejection  
+  lidar_loc_outlier_th: 10.0 # Increase from 5.0  
+  # Relax convergence criteria for dynamic motion  
+  pgo_frame_converge_pos_th: 0.1   # Increase from 0.05  
+  pgo_frame_converge_ang_th: 2.0   # Increase from 1.0
   rtk_fix_ang_noise: 2.0
   rtk_fix_pos_noise: 1.0
   rtk_height_noise_ratio: 10.0
@@ -119,10 +129,10 @@ pgo:
   rtk_outlier_th: 1.0
   smooth_factor: 0.01
 roi:
-  height_max: 0.5
-  height_min: -2.0
-  range_max: 70
-  range_min: 3.0
+  height_max: 2.0
+  height_min: -1.0
+  range_max: 20
+  range_min: 0.5
 ui:
   car_length: 2.0
   car_width: 1.6
