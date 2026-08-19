@@ -55,7 +55,7 @@ Lite3 激光雷达数据集可以从这里下载：
 安装其他依赖：
 
 ```bash
-sudo apt install -y libopencv-dev libpcl-dev pcl-tools libyaml-cpp-dev libepoxy-dev libgflags-dev python3-wheel ros-humble-foxy-ersions
+sudo apt install -y libopencv-dev libpcl-dev pcl-tools libyaml-cpp-dev libepoxy-dev libgflags-dev python3-wheel ros-foxy-pcl-conversions
 ```
 
 如果已经安装了 `libgoogle-glog-dev`，将其卸载：

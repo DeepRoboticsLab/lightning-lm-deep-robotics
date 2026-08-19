@@ -3,6 +3,7 @@
 
 #include "core/localization/lidar_loc/lidar_loc.h"
 #include "core/localization/localization.h"
+#include "core/lightning_math.hpp"
 
 #include <opencv2/highgui.hpp>
 
@@ -94,6 +95,10 @@ bool Localization::Init(const std::string& yaml_path, const std::string& global_
         //         }
 
         loc_result_ = res;
+
+        if (localization_result_callback_) {
+            localization_result_callback_(loc_result_);
+        }
 
         if (tf_callback_ && loc_result_.valid_) {
             tf_callback_(loc_result_.ToGeoMsg());
@@ -237,6 +242,19 @@ void Localization::LidarLocProcCloud(CloudPtr scan_undist) {
     auto res = lidar_loc_->GetLocalizationResult();
     pgo_->ProcessLidarLoc(res);
 
+    // 用真正的地图定位结果把当前帧变换到 map 坐标系，仅用于 RViz 显示。
+    // 不能直接把 LIO 的局部 world 点云标成 map 坐标系。
+    if (pointcloud_world_callback_ && res.lidar_loc_valid_) {
+        CloudPtr scan_world(new PointCloudType());
+        pcl::transformPointCloud(*scan_undist, *scan_world, res.pose_.matrix());
+
+        sensor_msgs::msg::PointCloud2 scan_msg;
+        pcl::toROSMsg(*scan_world, scan_msg);
+        scan_msg.header.frame_id = "map";
+        scan_msg.header.stamp = math::FromSec(res.timestamp_);
+        pointcloud_world_callback_(scan_msg);
+    }
+
     if (ui_) {
         // Twi with Til, here pose means Twl, thus Til=I
         ui_->UpdateScan(scan_undist, res.pose_);
@@ -347,5 +365,13 @@ void Localization::SetExternalPose(const Eigen::Quaterniond& q, const Eigen::Vec
 }
 
 void Localization::SetTFCallback(Localization::TFCallback&& callback) { tf_callback_ = callback; }
+
+void Localization::SetLocalizationResultCallback(LocalizationResultCallback&& callback) {
+    localization_result_callback_ = std::move(callback);
+}
+
+void Localization::SetPointcloudWorldCallback(PointcloudWorldCallback&& callback) {
+    pointcloud_world_callback_ = std::move(callback);
+}
 
 }  // namespace lightning::loc
