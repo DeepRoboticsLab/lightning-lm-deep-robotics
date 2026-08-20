@@ -71,22 +71,19 @@ class Localization {
     /// 结束，保存临时地图
     void Finish();
 
-    /// 获取激光的状态
-    NavState GetState() const { return lio_->GetState(); }
-
-    std::shared_ptr<LaserMapping> GetLIO() { return lio_; }
-    std::shared_ptr<LidarLoc> GetLidarLoc() { return lidar_loc_; }
-
     /// 异步处理函数
     void LidarOdomProcCloud(CloudPtr);
     void LidarLocProcCloud(CloudPtr);
 
     using TFCallback = std::function<void(const geometry_msgs::msg::TransformStamped& odom)>;
+    using LocalizationResultCallback = std::function<void(const LocalizationResult& result)>;
     using LocStateCallback = std::function<void(const std_msgs::msg::Int32& state)>;
     using PointcloudBodyCallback = std::function<void(const sensor_msgs::msg::PointCloud2& pointcloud)>;
     using PointcloudWorldCallback = std::function<void(const sensor_msgs::msg::PointCloud2& pointcloud)>;
 
     void SetTFCallback(TFCallback&& callback);
+    void SetLocalizationResultCallback(LocalizationResultCallback&& callback);
+    void SetPointcloudWorldCallback(PointcloudWorldCallback&& callback);
 
     // void SetPathCallback(std::function<void(const nav_msgs::msg::Path& path)>&& callback);
     // void SetPointcloudWorldCallback(std::function<void(const sensor_msgs::msg::PointCloud2& pointcloud)>&& callback);
@@ -124,6 +121,7 @@ class Localization {
 
     /// 框架相关
     TFCallback tf_callback_;
+    LocalizationResultCallback localization_result_callback_;
     LocStateCallback loc_state_callback_;
     PointcloudBodyCallback pointcloud_body_callback_;
     PointcloudWorldCallback pointcloud_world_callback_;

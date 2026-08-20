@@ -14,11 +14,10 @@ set(CMAKE_BUILD_TYPE Release)
 # 导入第三方库，同时做一些全局编译选项配置
 add_definitions("-DPCL_NO_PRECOMPILE")
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC -fopenmp")
-#  Release 模式下不需要启用完整的调试符号（-g -ggdb），否则会卡在编译81%处并因内存耗尽而终止
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} -O2")# -g -ggdb")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS} -ggdb -g")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC -fopenmp -fPIC -g")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} -O2 -fopenmp -fPIC -g -ggdb")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS} -ggdb -g -fopenmp -fPIC -g")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC -g")
 
 
 if (CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -33,18 +32,16 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(cmake/packages.cmake)
 
 # msg 和 srv
-set(MY_MSG_FILES "msg/NavState.msg")
-set(MY_SRV_FILES 
-    "srv/LocCmd.srv"
-    "srv/SaveMap.srv"
-    "srv/SavePath.srv"
+set(MY_MSG_FILES
+        "msg/NavState.msg"
 )
-# set(SRC_DIR ${PROJECT_SOURCE_DIR}/srv)
-# file(GLOB_RECURSE SRC_FILES ${SRC_DIR}/*.srv)
-# foreach (SRC_FILE ${SRC_FILES})
-#     file(RELATIVE_PATH REL_PATH ${SRC_DIR} ${SRC_FILE})
-#     list(APPEND MY_SRV_FILES ${PROJECT_SOURCE_DIR}:srv/${REL_PATH})
-# endforeach ()
+set(MY_SRV_FILES "")
+set(SRC_DIR ${PROJECT_SOURCE_DIR}/srv)
+file(GLOB_RECURSE SRC_FILES ${SRC_DIR}/*.srv)
+foreach (SRC_FILE ${SRC_FILES})
+    file(RELATIVE_PATH REL_PATH ${SRC_DIR} ${SRC_FILE})
+    list(APPEND MY_SRV_FILES ${PROJECT_SOURCE_DIR}:srv/${REL_PATH})
+endforeach ()
 
 rosidl_generate_interfaces(${PROJECT_NAME}
         ${MY_SRV_FILES}

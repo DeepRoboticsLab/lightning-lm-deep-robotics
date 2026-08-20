@@ -8,14 +8,9 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
-#include <nav_msgs/msg/path.hpp>
-#include <nav_msgs/msg/odometry.hpp>
-#include <tf2_ros/transform_broadcaster.h>
 #include <string>
 
-#include "lightning/msg/nav_state.hpp"
 #include "lightning/srv/save_map.hpp"
-#include "lightning/srv/save_path.hpp"
 #include "livox_ros_driver2/msg/custom_msg.hpp"
 
 #include "common/eigen_types.h"
@@ -50,15 +45,8 @@ class SlamSystem {
         bool with_loop_closing_ = true;     // 是否需要回环检测
         bool with_visualization_ = true;    // 是否需要可视化UI
         bool with_2dvisualization_ = true;  // 是否需要2D可视化UI
-        bool pub_odom_ = false;             // 是否发布Odometry
-        bool pub_tf_ = false;               // 是否需要发布TF
-        bool enable_lidar_rviz_ = false; // 是否需要RViz可视化点云
-        bool enable_path_rviz_ = false;      // 是否发布Path
 
         bool step_on_kf_ = true;  // 是否在关键帧处暂停p
-        bool log_pose_opt_ = false; // 是否打印位姿和速度
-
-        bool use_imu_init_ = false; // 是否使用IMU朝向进行初始化
     };
 
     using SaveMapService = srv::SaveMap;
@@ -76,9 +64,6 @@ class SlamSystem {
     /// 保存地图，默认保存至./data/地图名/ 下方
     void SaveMap(const std::string& path = "");
 
-    /// 保存轨迹，默认保存至./data/ 下方
-    bool SavePath(const std::string& path = "");
-
     /// 处理IMU
     void ProcessIMU(const lightning::IMUPtr& imu);
 
@@ -92,13 +77,11 @@ class SlamSystem {
    private:
     /// ros端保存地图的实现
     void SaveMap(const SaveMapService::Request::SharedPtr request, SaveMapService::Response::SharedPtr response);
-    void SavePath(const srv::SavePath::Request::SharedPtr request, srv::SavePath::Response::SharedPtr response);
 
     Options options_;
     std::atomic_bool running_ = false;
 
     rclcpp::Service<SaveMapService>::SharedPtr savemap_service_ = nullptr;
-    rclcpp::Service<srv::SavePath>::SharedPtr savepath_service_ = nullptr;
 
     std::string map_name_;  // 地图名
 
@@ -108,20 +91,9 @@ class SlamSystem {
     std::shared_ptr<g2p5::G2P5> g2p5_ = nullptr;        // 栅格地图
 
     Keyframe::Ptr cur_kf_ = nullptr;
-    bool imu_inited_ = false;
 
     /// 实时模式下的ros2 node, subscribers
     rclcpp::Node::SharedPtr node_;
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_pub_ = nullptr;
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr map_pub_ = nullptr;
-    rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_ = nullptr;
-    rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_ = nullptr;
-    rclcpp::Publisher<msg::NavState>::SharedPtr nav_state_pub_ = nullptr;
-    std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_ = nullptr;
-
-    std::map<unsigned long, CloudPtr> global_map_clouds_;
-    nav_msgs::msg::Path path_;
-
     std::string imu_topic_;
     std::string cloud_topic_;
     std::string livox_topic_;

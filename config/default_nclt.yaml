@@ -1,19 +1,19 @@
 # 针对NCLT的配置
 common:
   dataset: "nclt"
-  lidar_topic: "/LIDAR/POINTS"
+  lidar_topic: "points_raw"
   livox_lidar_topic: "/livox/lidar"
-  imu_topic: "/IMU"
+  imu_topic: "imu_raw"
 
 # fasterlio 参数
 fasterlio:
-  lidar_type: 4               # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR,
+  lidar_type: 2                # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR,
   scan_line: 32
   blind: 0.5                # 盲区，小于盲区距离的不会处理
   time_scale: 1e-3             # 兼容不同数据集的时间单位，仅对Velodyne LiDAR(lidar_type=2)生效
 
   skip_lidar_num: 0 # 点云的跳帧情况
-  point_filter_num: 6 # 点云采样参数
+  point_filter_num: 12 # 点云采样参数
   max_iteration: 4 # 最大迭代次数
   filter_size_scan: 0.5 # 对scan进行的降采样
   filter_size_map: 0.5
@@ -34,6 +34,14 @@ fasterlio:
                  0, 1, 0,
                  0, 0, 1 ]
   keep_first_imu_estimation: false
+  kf_dis_th: 2.0
+  kf_angle_th: 5.0
+
+  enable_icp_part: false
+  plane_icp_weight: 500.0
+  min_pts: 300
+  imu_filter: true
+  proj_kfs: false
 
 
 g2p5:
@@ -60,10 +68,10 @@ system:
   pub_tf: true
 
 loop_closing:
-  loop_kf_gap: 10       # 每隔多少个关键帧检查一次
+  loop_kf_gap: 50       # 每隔多少个关键帧检查一次
   min_id_interval: 20   # 被检查的关键帧ID间隔
-  closest_id_th: 20     # 历史关键帧与当前帧的ID间隔
-  max_range: 60.0       # 候选帧的最大距离
+  closest_id_th: 50     # 历史关键帧与当前帧的ID间隔
+  max_range: 30.0       # 候选帧的最大距离
   ndt_score_th: 1.0     # ndt位姿分值
   with_height: true
 
@@ -119,7 +127,7 @@ pgo:
   rtk_outlier_th: 1.0
   smooth_factor: 0.01
 roi:
-  height_max: 0.5
+  height_max: 5.0
   height_min: -2.0
   range_max: 70
   range_min: 3.0
