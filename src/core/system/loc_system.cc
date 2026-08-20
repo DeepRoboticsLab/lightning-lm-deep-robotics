@@ -34,14 +34,14 @@ bool LocSystem::Init(const std::string &yaml_path) {
 
     std::string map_path = yaml.GetValue<std::string>("system", "map_path");
 
-    options_.pub_tf_ = yaml.GetValue<bool>("system", "pub_tf", true);
-    options_.pub_odom_ = yaml.GetValue<bool>("system", "pub_odom", true);
-    options_.pub_nav_state_ = yaml.GetValue<bool>("system", "pub_nav_state", true);
+    options_.pub_tf_ = yaml.GetValue<bool>("system", "pub_tf");
+    options_.pub_odom_ = yaml.GetValue<bool>("system", "pub_odom");
+    options_.pub_nav_state_ = yaml.GetValue<bool>("system", "pub_nav_state");
     const bool enable_lidar_loc_rviz =
-        yaml.GetValue<bool>("system", "enable_lidar_loc_rviz", false);
-    const bool enable_path_rviz = yaml.GetValue<bool>("system", "enable_path_rviz", false);
+        yaml.GetValue<bool>("system", "enable_lidar_loc_rviz");
+    const bool enable_path_rviz = yaml.GetValue<bool>("system", "enable_path_rviz");
     max_path_size_ = static_cast<std::size_t>(
-        std::max(1, yaml.GetValue<int>("system", "rviz_path_max_size", 2000)));
+        std::max(1, yaml.GetValue<int>("system", "rviz_path_max_size")));
 
     std::string default_global_pcd = map_path;
     if (!default_global_pcd.empty() && default_global_pcd.back() != '/') {
@@ -49,7 +49,7 @@ bool LocSystem::Init(const std::string &yaml_path) {
     }
     default_global_pcd += "global.pcd";
     global_map_pcd_path_ =
-        yaml.GetValue<std::string>("system", "rviz_global_map_pcd", default_global_pcd);
+        yaml.GetValue<std::string>("system", "rviz_global_map_pcd");
 
     LOG(INFO) << "online mode, creating ros2 node ... ";
 
@@ -60,7 +60,10 @@ bool LocSystem::Init(const std::string &yaml_path) {
     cloud_topic_ = yaml.GetValue<std::string>("common", "lidar_topic");
     livox_topic_ = yaml.GetValue<std::string>("common", "livox_lidar_topic");
 
-    rclcpp::QoS qos(10);
+    rclcpp::QoS qos(10);// IMU继续使用，默认为RELIABLE
+
+    rclcpp::QoS lidar_qos(10);
+    lidar_qos.best_effort();// 雷达使用BEST_EFFORT
 
     imu_sub_ = node_->create_subscription<sensor_msgs::msg::Imu>(
         imu_topic_, qos, [this](sensor_msgs::msg::Imu::SharedPtr msg) {
@@ -74,16 +77,16 @@ bool LocSystem::Init(const std::string &yaml_path) {
         });
 
     cloud_sub_ = node_->create_subscription<sensor_msgs::msg::PointCloud2>(
-        cloud_topic_, qos, [this](sensor_msgs::msg::PointCloud2::SharedPtr cloud) {
+        cloud_topic_, lidar_qos, [this](sensor_msgs::msg::PointCloud2::SharedPtr cloud) {
             Timer::Evaluate([&]() { ProcessLidar(cloud); }, "Proc Lidar", true);
         });
 
     livox_sub_ = node_->create_subscription<livox_ros_driver2::msg::CustomMsg>(
-        livox_topic_, qos, [this](livox_ros_driver2::msg::CustomMsg ::SharedPtr cloud) {
+        livox_topic_, lidar_qos, [this](livox_ros_driver2::msg::CustomMsg ::SharedPtr cloud) {
             Timer::Evaluate([&]() { ProcessLidar(cloud); }, "Proc Lidar", true);
         });
 
-    if (yaml.GetValue<bool>("system", "enable_initialpose_rviz", true)) {
+    if (yaml.GetValue<bool>("system", "enable_initialpose_rviz")) {
         initial_pose_sub_ = node_->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
             "/initialpose", 10, [this](geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg) {
                 const auto &p = msg->pose.pose.position;
@@ -115,9 +118,9 @@ bool LocSystem::Init(const std::string &yaml_path) {
 
     if (enable_lidar_loc_rviz) {
         const std::string current_scan_topic = yaml.GetValue<std::string>(
-            "system", "rviz_current_scan_topic", "/lightning/current_scan_cloud");
+            "system", "rviz_current_scan_topic");
         const std::string global_map_topic = yaml.GetValue<std::string>(
-            "system", "rviz_global_map_topic", "/lightning/global_map_cloud");
+            "system", "rviz_global_map_topic");
 
         current_scan_pub_ =
             node_->create_publisher<sensor_msgs::msg::PointCloud2>(current_scan_topic, 10);

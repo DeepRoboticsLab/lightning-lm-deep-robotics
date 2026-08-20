@@ -88,8 +88,10 @@ bool SlamSystem::Init(const std::string& yaml_path) {
         cloud_topic_ = yaml["common"]["lidar_topic"].as<std::string>();
         livox_topic_ = yaml["common"]["livox_lidar_topic"].as<std::string>();
 
-        rclcpp::QoS qos(10);
-        // qos.best_effort();
+    rclcpp::QoS qos(10);// IMU继续使用，默认为RELIABLE
+
+    rclcpp::QoS lidar_qos(10);
+    lidar_qos.best_effort();// 雷达使用BEST_EFFORT
 
         imu_sub_ = node_->create_subscription<sensor_msgs::msg::Imu>(
             imu_topic_, qos, [this](sensor_msgs::msg::Imu::SharedPtr msg) {
@@ -104,12 +106,12 @@ bool SlamSystem::Init(const std::string& yaml_path) {
             });
 
         cloud_sub_ = node_->create_subscription<sensor_msgs::msg::PointCloud2>(
-            cloud_topic_, qos, [this](sensor_msgs::msg::PointCloud2::SharedPtr cloud) {
+            cloud_topic_, lidar_qos, [this](sensor_msgs::msg::PointCloud2::SharedPtr cloud) {
                 Timer::Evaluate([&]() { ProcessLidar(cloud); }, "Proc Lidar", true);
             });
 
         livox_sub_ = node_->create_subscription<livox_ros_driver2::msg::CustomMsg>(
-            livox_topic_, qos, [this](livox_ros_driver2::msg::CustomMsg ::SharedPtr cloud) {
+            livox_topic_, lidar_qos, [this](livox_ros_driver2::msg::CustomMsg ::SharedPtr cloud) {
                 Timer::Evaluate([&]() { ProcessLidar(cloud); }, "Proc Lidar", true);
             });
 
