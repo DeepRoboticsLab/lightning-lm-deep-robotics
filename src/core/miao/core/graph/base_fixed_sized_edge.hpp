@@ -180,7 +180,7 @@ void BaseFixedSizedEdge<D, E, VertexTypes...>::ConstructQuadraticFormN(const Inf
     from->UpdateHessianAndBias(AtO * A, A.transpose() * weightedError);
 
     ConstructOffDiagonalQuadraticFormMs<N>(AtO, std::make_index_sequence<nr_of_vertices_ - N - 1>());
-}
+};
 
 template <int D, typename E, typename... VertexTypes>
 template <int N, std::size_t... Ints, typename AtOType>
