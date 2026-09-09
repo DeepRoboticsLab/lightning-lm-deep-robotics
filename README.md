@@ -1,6 +1,6 @@
 # Lightning-LM Deployment Guide for Deep Robotics M20
 
-This guide describes how to deploy Lightning-LM on the Deep Robotics M20 platform running ROS 2 Foxy and equipped with a RoboSense LiDAR. It covers the complete deployment procedure, configuration, and commonly used commands.
+This guide describes how to build Lightning-LM with ROS 2 Foxy or Humble and deploy it on the Deep Robotics M20 platform equipped with a RoboSense LiDAR. The robot-specific instructions use Foxy; the desktop build instructions also cover Humble.
 
 Tutorial videos:
 
@@ -59,41 +59,47 @@ For configuration and usage instructions for the RoboSense LiDAR installed on th
 
 ### Step 1: Install APT Dependencies
 
+Use ROS 2 Foxy on Ubuntu 20.04 or ROS 2 Humble on Ubuntu 22.04. Install ROS 2 first, then source **one** distribution in a fresh Bash terminal:
+
 ```bash
-sudo apt install -y libopencv-dev libpcl-dev pcl-tools libyaml-cpp-dev libepoxy-dev libgflags-dev libgoogle-glog-dev python3-wheel ros-foxy-pcl-conversions
+source /opt/ros/humble/setup.bash  # Ubuntu 22.04
+# For Ubuntu 20.04 instead: source /opt/ros/foxy/setup.bash
+
+cd /path/to/lightning-lm-deep-robotics
+bash scripts/install_dep.sh
 ```
+
+The script uses `ROS_DISTRO` to install `ros-${ROS_DISTRO}-pcl-conversions`,
+`ros-${ROS_DISTRO}-rosbag2`, `ros-${ROS_DISTRO}-ament-cmake-auto`, and
+`ros-${ROS_DISTRO}-rosidl-default-generators`, along with the C++ and Pangolin
+dependencies. It includes `libtbb-dev` for the TBB library linked by Lightning-LM
+and `python3-colcon-common-extensions` for the build tools.
+
+If APT reports `Unable to locate package ros-foxy-pcl-conversions` on Ubuntu
+22.04, source Humble and rerun the script. Do not install Foxy packages into a
+Humble environment. If packages for the correct distribution cannot be found,
+check the ROS APT repository configuration and run `sudo apt update`.
 
 ### Step 2: Extract and Build Pangolin 0.9.3
 
 Enter the `thirdparty` directory and extract Pangolin:
 
 ```bash
-cd ~/lightning-lm/thirdparty
+cd thirdparty
 
-unzip Pangolin-0.9.3.zip
+unzip -n Pangolin-0.9.3.zip
 
 cd Pangolin-0.9.3
 ```
 
-Install the required dependencies:
+Run the extraction even if `Pangolin-0.9.3` already exists. The checked-in
+directory is missing headers under `components/pango_packetstream/include/pangolin/log`;
+the bundled ZIP supplies them. `unzip -n` restores missing files without
+overwriting existing files. Skipping this step can cause
+`fatal error: pangolin/log/packet.h: No such file or directory`.
 
-```bash
-sudo apt update
-
-sudo apt install -y \
-  cmake \
-  g++ \
-  pkg-config \
-  libgl1-mesa-dev \
-  libegl1-mesa-dev \
-  libglew-dev \
-  libepoxy-dev \
-  libeigen3-dev \
-  libx11-dev \
-  libwayland-dev \
-  libxkbcommon-dev \
-  wayland-protocols
-```
+The dependency script above also installs Pangolin's OpenGL, X11, and Wayland
+dependencies, including `wayland-protocols`.
 
 Create the build directory and configure the project using CMake:
 
@@ -133,11 +139,12 @@ If no errors occur during compilation, Pangolin 0.9.3 has been successfully buil
 **Low-memory build method**, recommended for onboard computers such as the M20 / RK3588. This can help prevent compilation failures caused by out-of-memory (OOM) errors:
 
 ```bash
-cd lightning-lm-deep-robotics
+cd /path/to/lightning-lm-deep-robotics
 
 export MAKEFLAGS="-j3"
 
-source /opt/robot/scripts/setup_ros2.sh
+source /opt/ros/humble/setup.bash  # Or /opt/ros/foxy/setup.bash
+# On the M20, use /opt/robot/scripts/setup_ros2.sh instead if provided.
 
 colcon build --parallel-workers 3 --executor sequential --cmake-args -DCMAKE_BUILD_TYPE=Release
 
@@ -151,9 +158,9 @@ Using four CPU cores for compilation may cause the system to freeze because of i
 **Standard build method** for PCs or servers with sufficient memory:
 
 ```bash
-cd lightning-lm-deep-robotics
+cd /path/to/lightning-lm-deep-robotics
 
-source /opt/ros/foxy/setup.bash
+source /opt/ros/humble/setup.bash  # Or /opt/ros/foxy/setup.bash
 
 colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
 
