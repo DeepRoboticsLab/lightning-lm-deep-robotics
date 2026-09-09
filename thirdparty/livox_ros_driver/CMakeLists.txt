@@ -1,10 +1,8 @@
+
 # Copyright(c) 2020 livoxtech limited.
 
 cmake_minimum_required(VERSION 3.14)
 project(livox_ros_driver2)
-
-# Define a default version if not already defined
-set(LIVOX_ROS_DRIVER2_VERSION "1.0.0" CACHE STRING "Livox ROS Driver version")
 
 # Default to C99
 if (NOT CMAKE_C_STANDARD)

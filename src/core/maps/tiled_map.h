@@ -151,9 +151,6 @@ class TiledMap {
     /// 现在会调用深拷贝
     std::map<int, CloudPtr> GetDynamicCloud();
 
-    /// 获取静态点云
-    CloudPtr GetStaticCloud2();
-
     /// 获取拼接好的地图
     CloudPtr GetAllMap();
 

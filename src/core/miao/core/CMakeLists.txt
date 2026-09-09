@@ -20,5 +20,5 @@ target_include_directories(miao.core PRIVATE
 
 target_link_libraries(
         miao.core
-        glog::glog tbb
+        glog tbb
 )

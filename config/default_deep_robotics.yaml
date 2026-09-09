@@ -1,11 +1,13 @@
+# 针对NCLT的配置
 common:
+  dataset: "nclt"
   lidar_topic: "/LIDAR/POINTS"
-  livox_lidar_topic: "/livox/lidar" # 不使用，也要有，否则会报错
+  livox_lidar_topic: "/livox/lidar"
   imu_topic: "/IMU"
 
 # fasterlio 参数
 fasterlio:
-  lidar_type: 4                # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR,  4 or RoboSense LiDAR
+  lidar_type: 4               # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR,
   scan_line: 32
   blind: 0.5                # 盲区，小于盲区距离的不会处理
   time_scale: 1e-3             # 兼容不同数据集的时间单位，仅对Velodyne LiDAR(lidar_type=2)生效
@@ -27,11 +29,20 @@ fasterlio:
   b_acc_cov: 0.0001
   b_gyr_cov: 0.0001
   extrinsic_est_en: false      # true: enable the online estimation of IMU-LiDAR extrinsic
-  extrinsic_T: [ 0, 0, 0 ]
+  extrinsic_T: [ 0, 0, 0.0 ]
   extrinsic_R: [ 1, 0, 0,
                  0, 1, 0,
                  0, 0, 1 ]
   keep_first_imu_estimation: false
+  
+  kf_dis_th: 2.0
+  kf_angle_th: 5.0
+
+  enable_icp_part: false
+  plane_icp_weight: 500.0
+  min_pts: 300
+  imu_filter: true
+  proj_kfs: false
 
 
 g2p5:
@@ -44,7 +55,7 @@ g2p5:
 
 system:
   with_loop_closing: true # 是否需要回环检测
-  with_ui: true # 是否需要3D UI (RK3588请设为false)
+  with_ui: false # 是否需要3D UI
   with_2dui: false # 是否需要2D UI
   with_g2p5: false # 是否需要栅格地图
   step_on_kf: false # 是否在关键帧处暂停
@@ -54,7 +65,7 @@ system:
   enable_lidar_odom_skip: false
   lidar_loc_skip_num: 4
   lidar_odom_skip_num: 2
-  map_path: ./data/office4f/
+  map_path: ./data/new_map/
   pub_tf: true
 
 loop_closing:
@@ -98,7 +109,6 @@ maps:
   save_dyn_when_unload: false
   unload_map_size: 4
   with_dyn_area: false
-# fuse LIO, LiDAR localization( requires a pre-built map), Dead Reckoning, RTK
 pgo:
   dr_ang_noise: 0.5
   dr_pos_noise: 1.0
@@ -117,7 +127,6 @@ pgo:
   rtk_other_pos_noise: 5.0
   rtk_outlier_th: 1.0
   smooth_factor: 0.01
-#  Region of Interest for point cloud processing, filtering out points outside specified ranges to reduce noise and computational load
 roi:
   height_max: 0.5
   height_min: -2.0

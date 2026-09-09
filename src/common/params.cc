@@ -51,8 +51,6 @@ Params::Params(const std::string& yaml_path) {
             sensor_ = SensorType::LIVOX;
         } else if (sensorStr == "mid360") {
             sensor_ = SensorType::MID360;
-        } else if (sensorStr == "robosense") {
-            sensor_ = SensorType::RoboSense;
         } else {
         }
 

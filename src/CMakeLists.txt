@@ -1,7 +1,3 @@
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm")
-    add_definitions(-DLIGHTNING_ARM_PLATFORM)
-endif()
-
 add_library(${PROJECT_NAME}.libs SHARED
         common/nav_state.cc
         common/constant.h
@@ -47,16 +43,7 @@ add_library(${PROJECT_NAME}.libs SHARED
 
         wrapper/bag_io.cc
 )
-# 对特别重的文件使用 -O1，减少内存和编译时间
-set_source_files_properties(
-    core/g2p5/g2p5.cc
-    core/system/slam.cc
-    core/localization/lidar_loc/lidar_loc.cc
-    core/localization/pose_graph/pgo_impl.cc
-    core/localization/lidar_loc/pclomp/ndt_omp.cpp
-    core/localization/lidar_loc/pclomp/voxel_grid_covariance_omp.cpp
-    PROPERTIES COMPILE_FLAGS "-O1 -fPIC -fopenmp"
-)
+
 ament_target_dependencies(
         ${PROJECT_NAME}.libs
         "rclcpp"
@@ -81,6 +68,7 @@ add_subdirectory(core/miao)
 
 target_link_libraries(${PROJECT_NAME}.libs
         ${third_party_libs}
+        ${PCL_LIBRARIES}
         miao.core
         miao.utils
         livox_interfaces2__rosidl_typesupport_cpp
@@ -89,5 +77,36 @@ target_link_libraries(${PROJECT_NAME}.libs
 
 install(TARGETS ${PROJECT_NAME}.libs miao.core miao.utils
         DESTINATION lib)
+
+# ============================================================
+# PCD Map Publisher
+# ============================================================
+
+add_executable(pcd_map_publisher
+        ui/pcd_map_publisher.cpp
+)
+
+ament_target_dependencies(
+        pcd_map_publisher
+        "rclcpp"
+        "sensor_msgs"
+        "pcl_conversions"
+)
+
+target_include_directories(
+        pcd_map_publisher
+        PRIVATE
+        ${PCL_INCLUDE_DIRS}
+)
+
+target_link_libraries(
+        pcd_map_publisher
+        ${PCL_LIBRARIES}
+)
+
+install(
+        TARGETS pcd_map_publisher
+        DESTINATION lib/${PROJECT_NAME}
+)
 
 add_subdirectory(app)

@@ -12,8 +12,6 @@
 
 #include <yaml-cpp/yaml.h>
 #include <filesystem>
-#include <fstream>
-#include <iomanip>
 #include <opencv2/opencv.hpp>
 
 namespace lightning {
@@ -34,50 +32,9 @@ bool SlamSystem::Init(const std::string& yaml_path) {
     options_.with_loop_closing_ = yaml["system"]["with_loop_closing"].as<bool>();
     options_.with_visualization_ = yaml["system"]["with_ui"].as<bool>();
     options_.with_2dvisualization_ = yaml["system"]["with_2dui"].as<bool>();
-    options_.pub_tf_ = yaml["system"]["pub_tf"] ? yaml["system"]["pub_tf"].as<bool>() : false;
-    options_.pub_odom_ = yaml["system"]["pub_odom"] ? yaml["system"]["pub_odom"].as<bool>() : false;
     options_.with_gridmap_ = yaml["system"]["with_g2p5"].as<bool>();
     options_.step_on_kf_ = yaml["system"]["step_on_kf"].as<bool>();
-    options_.log_pose_opt_ = yaml["system"]["log_pose_opt"] ? yaml["system"]["log_pose_opt"].as<bool>() : false;
-    options_.enable_lidar_rviz_ = yaml["system"]["enable_lidar_loc_rviz"] ? yaml["system"]["enable_lidar_loc_rviz"].as<bool>() : false;
-    options_.enable_path_rviz_ = yaml["system"]["enable_path_rviz"] ? yaml["system"]["enable_path_rviz"].as<bool>() : false;
-    options_.use_imu_init_ = yaml["system"]["use_imu_orient"] ? yaml["system"]["use_imu_orient"].as<bool>() : false;
-    if(options_.enable_lidar_rviz_ && !options_.enable_path_rviz_) {
-        options_.enable_path_rviz_ = true; // 发布路径时会包含位姿信息，方便调试
-    }
 
-    LOG(INFO) << "SlamSystem Options: "
-              << "\n  online_mode: " << options_.online_mode_
-              << "\n  with_cc: " << options_.with_cc_
-              << "\n  with_gridmap: " << options_.with_gridmap_
-              << "\n  with_loop_closing: " << options_.with_loop_closing_
-              << "\n  with_visualization: " << options_.with_visualization_
-              << "\n  with_2dvisualization: " << options_.with_2dvisualization_
-              << "\n  pub_odom: " << options_.pub_odom_
-              << "\n  pub_tf: " << options_.pub_tf_
-              << "\n  enable_lidar_rviz: " << options_.enable_lidar_rviz_
-              << "\n  enable_path_rviz: " << options_.enable_path_rviz_
-              << "\n  step_on_kf: " << options_.step_on_kf_
-              << "\n  log_pose_opt: " << options_.log_pose_opt_
-              << "\n  use_imu_init: " << options_.use_imu_init_;
-
-    if (yaml["system"]["map_path"]) {
-        std::string map_path = yaml["system"]["map_path"].as<std::string>();
-        if (map_path.back() == '/') {
-            map_path.pop_back();
-        }
-        size_t last_slash = map_path.find_last_of('/');
-        if (last_slash != std::string::npos) {
-            map_name_ = map_path.substr(last_slash + 1);
-        } else {
-            map_name_ = map_path;
-        }
-    } else {
-        map_name_ = "new_map";
-    }
-    LOG(INFO) << "map name: " << map_name_;
-
-    /// loop closing
     if (options_.with_loop_closing_) {
         LOG(INFO) << "slam with loop closing";
         LoopClosing::Options options;
@@ -142,8 +99,6 @@ bool SlamSystem::Init(const std::string& yaml_path) {
                     Vec3d(msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
                 imu->angular_velocity =
                     Vec3d(msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z);
-                imu->orientation =
-                    Quatd(msg->orientation.w, msg->orientation.x, msg->orientation.y, msg->orientation.z);
 
                 ProcessIMU(imu);
             });
@@ -158,35 +113,11 @@ bool SlamSystem::Init(const std::string& yaml_path) {
                 Timer::Evaluate([&]() { ProcessLidar(cloud); }, "Proc Lidar", true);
             });
 
-        if (options_.enable_lidar_rviz_) {
-            std::string scan_topic = yaml["system"]["rviz_current_scan_topic"] ? yaml["system"]["rviz_current_scan_topic"].as<std::string>() : "lightning/current_scan";
-            std::string map_topic = yaml["system"]["rviz_global_map_topic"] ? yaml["system"]["rviz_global_map_topic"].as<std::string>() : "lightning/global_map";
-            cloud_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>(scan_topic, 10);
-            map_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>(map_topic, 1);
-        }
-
-        if (options_.enable_path_rviz_) {
-            path_pub_ = node_->create_publisher<nav_msgs::msg::Path>("lightning/path", 10);
-        }
-
-        if (options_.pub_odom_) {
-            odom_pub_ = node_->create_publisher<nav_msgs::msg::Odometry>("lightning/odom", 10);
-            nav_state_pub_ = node_->create_publisher<msg::NavState>("lightning/nav_state", 10);
-        }
-
-        if (options_.pub_tf_) {
-            tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(node_);
-        }
-
         savemap_service_ = node_->create_service<SaveMapService>(
-            "lightning/save_map", [this](const SaveMapService::Request::SharedPtr req,
+            "lightning/save_map", [this](SaveMapService::Request::SharedPtr req,
                                          SaveMapService::Response::SharedPtr res) { SaveMap(req, res); });
 
-        savepath_service_ = node_->create_service<srv::SavePath>(
-            "lightning/save_path", [this](const srv::SavePath::Request::SharedPtr req,
-                                          srv::SavePath::Response::SharedPtr res) { SavePath(req, res); });
-
-        LOG(INFO) << "SavePath service has been created.";
+        LOG(INFO) << "online slam node has been created.";
     }
 
     return true;
@@ -199,9 +130,7 @@ SlamSystem::~SlamSystem() {
 }
 
 void SlamSystem::StartSLAM(std::string map_name) {
-    if (!map_name.empty()) {
-        map_name_ = map_name;
-    }
+    map_name_ = map_name;
     running_ = true;
 }
 
@@ -302,61 +231,10 @@ void SlamSystem::SaveMap(const std::string& path) {
     LOG(INFO) << "map saved";
 }
 
-// ros服务回调，保存轨迹
-// 如果请求里没有指定路径，则默认保存在./data/下，文件名为path_年月日时分秒.txt
-// ros2 service call /lightning/save_path lightning/srv/SavePath
-void SlamSystem::SavePath(const srv::SavePath::Request::SharedPtr request, srv::SavePath::Response::SharedPtr response) {
-    std::string save_path = request->file_path;
-    bool success = SavePath(save_path);
-    response->success = success;
-    if (success) {
-        response->message = "Path saved successfully. Total poses: " + std::to_string(path_.poses.size());
-    } else {
-        response->message = "Failed to save path.";
-    }
-}
-
-bool SlamSystem::SavePath(const std::string& path) {
-    std::string save_path = path;
-    if (save_path.empty()) {
-        char time_str[64];
-        time_t now = time(nullptr);
-        strftime(time_str, sizeof(time_str), "%Y%m%d_%H%M%S", localtime(&now));
-        save_path = "./data/path_" + std::string(time_str) + ".txt";
-    }
-
-    std::ofstream file(save_path);
-    if (!file.is_open()) {
-        LOG(ERROR) << "Failed to open file: " << save_path;
-        return false;
-    }
-    file<<"timestamp px py pz qx qy qz qw\n";
-    for (const auto& pose : path_.poses) {
-        file << std::fixed << std::setprecision(5) 
-             << pose.header.stamp.sec << "." << std::setfill('0') << std::setw(9) << pose.header.stamp.nanosec << " "
-             << pose.pose.position.x << " " << pose.pose.position.y << " " << pose.pose.position.z << " "
-             << pose.pose.orientation.x << " " << pose.pose.orientation.y << " " 
-             << pose.pose.orientation.z << " " << pose.pose.orientation.w << "\n";
-    }
-
-    file.close();
-    LOG(INFO) << "Path saved to " << save_path << ". Total poses: " << path_.poses.size();
-    return true;
-}
-
-
 void SlamSystem::ProcessIMU(const lightning::IMUPtr& imu) {
     if (running_ == false) {
         return;
     }
-
-    if (options_.use_imu_init_ && !imu_inited_) {
-        LOG(INFO) << "Auto-initializing slam pose from IMU orientation (ENU): "
-                  << imu->orientation.coeffs().transpose();
-        lio_->SetInitPose(SE3(imu->orientation, Vec3d::Zero()));
-        imu_inited_ = true;
-    }
-
     lio_->ProcessIMU(imu);
 }
 
@@ -368,118 +246,6 @@ void SlamSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr& cl
     lio_->ProcessPointCloud2(cloud);
     lio_->Run();
 
-    if (options_.log_pose_opt_) {
-        auto state = lio_->GetState();
-        auto q = state.rot_.unit_quaternion();
-        
-        char log_buf[256];
-        snprintf(log_buf, sizeof(log_buf), 
-                "lio pose: [%.4f, %.4f, %.4f]\tq: [%.4f, %.4f, %.4f, %.4f]\tvelocity: [%.3f, %.3f, %.3f]m/s",
-                state.pos_.x(), state.pos_.y(), state.pos_.z(),
-                q.x(), q.y(), q.z(), q.w(),
-                state.vel_.x(), state.vel_.y(), state.vel_.z());
-        LOG(INFO) << log_buf;
-
-        // printf("\rslam.cc:266] pose: [%.4f, %.4f, %.4f], q: [%.4f, %.4f, %.4f, %.4f], vel: [%.4f, %.4f, %.4f]           ", 
-        //        state.pos_.x(), state.pos_.y(), state.pos_.z(),
-        //        q.w(), q.x(), q.y(), q.z(),
-        //        state.vel_.x(), state.vel_.y(), state.vel_.z());
-        // fflush(stdout);
-    }
-    static uint8_t count = 0;
-    if (nav_state_pub_ != nullptr) {
-        auto state = lio_->GetState();
-        // 真正的回环后的位姿，而非EKF的里程计位姿
-        SE3 pose_opt = lio_->GetOptPose();
-        auto q_opt = pose_opt.unit_quaternion();
-
-        msg::NavState ns;
-        ns.header.stamp = cloud->header.stamp;
-        ns.header.frame_id = "map";
-        ns.pose.position.x = pose_opt.translation().x();
-        ns.pose.position.y = pose_opt.translation().y();
-        ns.pose.position.z = pose_opt.translation().z();
-        ns.pose.orientation.x = q_opt.x();
-        ns.pose.orientation.y = q_opt.y();
-        ns.pose.orientation.z = q_opt.z();
-        ns.pose.orientation.w = q_opt.w();
-        ns.velocity.x = state.vel_.x();
-        ns.velocity.y = state.vel_.y();
-        ns.velocity.z = state.vel_.z();
-        ns.confidence = 1.0;
-        ns.pose_is_ok = true;
-        nav_state_pub_->publish(ns);
-
-        if (tf_broadcaster_ != nullptr) {
-            geometry_msgs::msg::TransformStamped tf_msg;
-            tf_msg.header = ns.header;
-            tf_msg.child_frame_id = "lidar_link";
-            tf_msg.transform.translation.x = ns.pose.position.x;
-            tf_msg.transform.translation.y = ns.pose.position.y;
-            tf_msg.transform.translation.z = ns.pose.position.z;
-            tf_msg.transform.rotation = ns.pose.orientation;
-            tf_broadcaster_->sendTransform(tf_msg);
-        }
-
-        if (odom_pub_ != nullptr) {
-            nav_msgs::msg::Odometry odom;
-            odom.header = ns.header;
-            odom.child_frame_id = "lidar_link";
-            odom.pose.pose = ns.pose;
-            odom.twist.twist.linear = ns.velocity;
-            odom_pub_->publish(odom);
-        }
-
-        if (options_.enable_path_rviz_ && path_pub_ != nullptr) {
-            geometry_msgs::msg::PoseStamped ps;
-            if(count<10){
-                LOG(INFO) << "publishing path pose: ["
-                          << ns.pose.position.x << ", " << ns.pose.position.y << ", " << ns.pose.position.z<< "]";
-                count++;
-            }
-            ps.header = cloud->header;
-            ps.pose = ns.pose;
-            path_.header = ns.header;
-            path_.poses.push_back(ps);
-            path_pub_->publish(path_);
-        }
-    } else if (options_.enable_path_rviz_) {
-        // 离线模式或未启用 pub_odom 时，手动维护 path_
-        SE3 pose_opt = lio_->GetOptPose();
-        auto q_opt = pose_opt.unit_quaternion();
-
-        geometry_msgs::msg::PoseStamped ps;
-        ps.header = cloud->header;
-        ps.header.frame_id = "map";
-        ps.pose.position.x = pose_opt.translation().x();
-        ps.pose.position.y = pose_opt.translation().y();
-        ps.pose.position.z = pose_opt.translation().z();
-        ps.pose.orientation.x = q_opt.x();
-        ps.pose.orientation.y = q_opt.y();
-        ps.pose.orientation.z = q_opt.z();
-        ps.pose.orientation.w = q_opt.w();
-
-        if (count < 10) {
-            LOG(INFO) << "recording path pose (no pub): [" << ps.pose.position.x << ", " << ps.pose.position.y
-                      << ", " << ps.pose.position.z << "]";
-            count++;
-        }
-
-        path_.header = ps.header;
-        path_.poses.push_back(ps);
-    } 
-
-    if (options_.enable_lidar_rviz_ && cloud_pub_ != nullptr) {
-        auto scan_world = lio_->GetScanDownWorld();
-        if (scan_world && !scan_world->empty()) {
-            sensor_msgs::msg::PointCloud2 scan_msg;
-            pcl::toROSMsg(*scan_world, scan_msg);
-            scan_msg.header.frame_id = "map";
-            scan_msg.header.stamp = cloud->header.stamp;
-            cloud_pub_->publish(scan_msg);
-        }
-    }
-
     auto kf = lio_->GetKeyframe();
     if (kf != cur_kf_) {
         cur_kf_ = kf;
@@ -501,18 +267,6 @@ void SlamSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr& cl
 
     if (ui_) {
         ui_->UpdateKF(cur_kf_);
-    }
-
-    if (map_pub_ != nullptr) {
-        static int kf_count = 0;
-        if (kf_count++ % 3 == 0) { // 每3个关键帧发布一个全局地图
-            auto global_map = lio_->GetGlobalMap(!options_.with_loop_closing_);
-            sensor_msgs::msg::PointCloud2 ros_map;
-            pcl::toROSMsg(*global_map, ros_map);
-            ros_map.header.frame_id = "map";
-            ros_map.header.stamp = node_->now();
-            map_pub_->publish(ros_map);
-        }
     }
 }
 
@@ -524,113 +278,6 @@ void SlamSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr
     lio_->ProcessPointCloud2(cloud);
     lio_->Run();
 
-    if (options_.log_pose_opt_) {
-        auto state = lio_->GetState();
-        auto q = state.rot_.unit_quaternion();
-        
-        char log_buf[256];
-        snprintf(log_buf, sizeof(log_buf), 
-                "lio pose: [%.4f, %.4f, %.4f]\tq: [%.4f, %.4f, %.4f, %.4f]\tvelocity: [%.3f, %.3f, %.3f]m/s",
-                state.pos_.x(), state.pos_.y(), state.pos_.z(),
-                q.x(), q.y(), q.z(), q.w(),
-                state.vel_.x(), state.vel_.y(), state.vel_.z());
-        LOG(INFO) << log_buf;
-
-        // printf("\rslam.cc:374] pose: [%.4f, %.4f, %.4f], q: [%.4f, %.4f, %.4f, %.4f], vel: [%.4f, %.4f, %.4f]           ", 
-        //        state.pos_.x(), state.pos_.y(), state.pos_.z(),
-        //        q.w(), q.x(), q.y(), q.z(),
-        //        state.vel_.x(), state.vel_.y(), state.vel_.z());
-        // fflush(stdout);
-    }
-    static uint8_t count = 0;
-    if (nav_state_pub_ != nullptr) {
-        auto state = lio_->GetState();
-        // 真正的回环后的位姿，而非EKF的里程计位姿
-        SE3 pose_opt = lio_->GetOptPose();
-        auto q_opt = pose_opt.unit_quaternion();
-
-        msg::NavState ns;
-        ns.header.stamp = cloud->header.stamp;
-        ns.header.frame_id = "map";
-        ns.pose.position.x = pose_opt.translation().x();
-        ns.pose.position.y = pose_opt.translation().y();
-        ns.pose.position.z = pose_opt.translation().z();
-        ns.pose.orientation.x = q_opt.x();
-        ns.pose.orientation.y = q_opt.y();
-        ns.pose.orientation.z = q_opt.z();
-        ns.pose.orientation.w = q_opt.w();
-        ns.velocity.x = state.vel_.x();
-        ns.velocity.y = state.vel_.y();
-        ns.velocity.z = state.vel_.z();
-        ns.confidence = 1.0;
-        ns.pose_is_ok = true;
-        nav_state_pub_->publish(ns);
-
-        if (tf_broadcaster_ != nullptr) {
-            geometry_msgs::msg::TransformStamped tf_msg;
-            tf_msg.header = ns.header;
-            tf_msg.child_frame_id = "lidar_link";
-            tf_msg.transform.translation.x = ns.pose.position.x;
-            tf_msg.transform.translation.y = ns.pose.position.y;
-            tf_msg.transform.translation.z = ns.pose.position.z;
-            tf_msg.transform.rotation = ns.pose.orientation;
-            tf_broadcaster_->sendTransform(tf_msg);
-        }
-
-        if (odom_pub_ != nullptr) {
-            nav_msgs::msg::Odometry odom;
-            odom.header = ns.header;
-            odom.child_frame_id = "lidar_link";
-            odom.pose.pose = ns.pose;
-            odom.twist.twist.linear = ns.velocity;
-            odom_pub_->publish(odom);
-        }
-
-        if (options_.enable_path_rviz_ && path_pub_ != nullptr) {
-            geometry_msgs::msg::PoseStamped ps;
-            ps.header = cloud->header;
-            ps.pose = ns.pose;
-            path_.header = ns.header;
-            path_.poses.push_back(ps);
-            path_pub_->publish(path_);
-        }
-    }else if (options_.enable_path_rviz_) {
-        // 离线模式或未启用 pub_odom 时，手动维护 path_
-        SE3 pose_opt = lio_->GetOptPose();
-        auto q_opt = pose_opt.unit_quaternion();
-
-        geometry_msgs::msg::PoseStamped ps;
-        ps.header = cloud->header;
-        ps.header.frame_id = "map";
-        ps.pose.position.x = pose_opt.translation().x();
-        ps.pose.position.y = pose_opt.translation().y();
-        ps.pose.position.z = pose_opt.translation().z();
-        ps.pose.orientation.x = q_opt.x();
-        ps.pose.orientation.y = q_opt.y();
-        ps.pose.orientation.z = q_opt.z();
-        ps.pose.orientation.w = q_opt.w();
-
-        if (count < 10) {
-            LOG(INFO) << "recording path pose (no pub): [" << ps.pose.position.x << ", " << ps.pose.position.y
-                      << ", " << ps.pose.position.z << "]";
-            count++;
-        }
-
-        path_.header = ps.header;
-        path_.poses.push_back(ps);
-    }
-
-    if (options_.enable_lidar_rviz_ && cloud_pub_ != nullptr) {
-        auto scan_world = lio_->GetScanDownWorld();
-        if (scan_world && !scan_world->empty()) {
-            sensor_msgs::msg::PointCloud2 scan_msg;
-            pcl::toROSMsg(*scan_world, scan_msg);
-            scan_msg.header.frame_id = "map";
-            scan_msg.header.stamp = cloud->header.stamp;
-            cloud_pub_->publish(scan_msg);
-        }
-    }
-
     auto kf = lio_->GetKeyframe();
     if (kf != cur_kf_) {
         cur_kf_ = kf;
@@ -652,18 +299,6 @@ void SlamSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr
 
     if (ui_) {
         ui_->UpdateKF(cur_kf_);
-    }
-
-    if (map_pub_ != nullptr) {
-        static int kf_count_livox = 0;
-        if (kf_count_livox++ % 3 == 0) { // 每3个关键帧发布一个全局地图
-            auto global_map = lio_->GetGlobalMap(!options_.with_loop_closing_);
-            sensor_msgs::msg::PointCloud2 ros_map;
-            pcl::toROSMsg(*global_map, ros_map);
-            ros_map.header.frame_id = "map";
-            ros_map.header.stamp = node_->now();
-            map_pub_->publish(ros_map);
-        }
     }
 }
 

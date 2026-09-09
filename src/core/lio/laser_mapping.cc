@@ -90,7 +90,7 @@ bool LaserMapping::LoadParamsFromYAML(const std::string &yaml_file) {
         preprocess_->SetLidarType(LidarType::OUST64);
         LOG(INFO) << "Using OUST 64 Lidar";
     } else if (lidar_type == 4) {
-        preprocess_->SetLidarType(LidarType::RoboSense);
+        preprocess_->SetLidarType(LidarType::ROBOSENSE);
         LOG(INFO) << "Using RoboSense Lidar";
     } else {
         LOG(WARNING) << "unknown lidar_type";
@@ -451,13 +451,13 @@ bool LaserMapping::SyncPackages() {
         if (measures_.scan_->points.size() <= 1) {
             LOG(WARNING) << "Too few input point cloud!";
             lidar_end_time_ = measures_.lidar_begin_time_ + lidar_mean_scantime_;
-        } else if (measures_.scan_->points.back().timestamp / double(1000) < 0.5 * lidar_mean_scantime_) {
+        } else if (measures_.scan_->points.back().time / double(1000) < 0.5 * lidar_mean_scantime_) {
             lidar_end_time_ = measures_.lidar_begin_time_ + lidar_mean_scantime_;
         } else {
             scan_num_++;
-            lidar_end_time_ = measures_.lidar_begin_time_ + measures_.scan_->points.back().timestamp / double(1000);
+            lidar_end_time_ = measures_.lidar_begin_time_ + measures_.scan_->points.back().time / double(1000);
             lidar_mean_scantime_ +=
-                (measures_.scan_->points.back().timestamp / double(1000) - lidar_mean_scantime_) / scan_num_;
+                (measures_.scan_->points.back().time / double(1000) - lidar_mean_scantime_) / scan_num_;
         }
 
         lo::lidar_time_interval = lidar_mean_scantime_;
@@ -563,54 +563,10 @@ void LaserMapping::MapIncremental() {
  * @param ekfom_data H matrix
  */
 void LaserMapping::OriObsModel(NavState &s, ESKF::CustomObservationModel &obs) {
-    if (last_imu_ == nullptr) {
-        obs.valid_ = false;
-        return;
-    }
-
-    // r = log(R_meas^-1 * R_est)
-    Quatd q_meas = last_imu_->orientation;
-    SO3 R_meas(q_meas);
-    SO3 R_est = s.rot_;
-    obs.h_x_ = Eigen::Matrix<double, 3, 23>::Zero();
-    // The rotation Jacobian is linearized assuming small orientation errors:
-    // for r = log(R_meas^{-1} * R_est), dr/d(delta_theta) ≈ I_3 when delta_theta is small.
-    // This identity approximation may become inaccurate for large orientation discrepancies,
-    // potentially affecting filter consistency or convergence in such cases.
-    obs.residual_ = (R_meas.inverse() * R_est).log();
-
-    if (obs.residual_.norm() > 0.5) { // 约 28.6 度
-        LOG(WARNING) << "IMU orientation residual is too large: " << obs.residual_.norm()
-                     << ". q_est: " << R_est.unit_quaternion().coeffs().transpose()
-                     << ", q_meas: " << q_meas.coeffs().transpose();
-        
-        if (!flg_EKF_inited_) {
-            LOG(INFO) << "EKF not inited, forcing state to match IMU orientation";
-            s.rot_ = R_meas;
-            obs.residual_.setZero();
-        }
-    }
-
-    obs.h_x_ = Eigen::Matrix<double, 3, 23>::Zero();
-    obs.h_x_.block<3, 3>(0, 3) = Mat3d::Identity();
+    (void)s;
+    obs.valid_ = false;
 }
-// void QuaternionObsModel(NavState &s, ESKF::CustomObservationModel &obs,   
-//                        const Quatd& measured_quat) {  
-//     // 获取当前状态的四元数  
-//     Quatd current_quat = s.rot_;  
-      
-//     // 计算四元数误差 (可以使用对数映射)  
-//     Quatd error_quat = measured_quat.inverse() * current_quat;  
-//     Vec3d error_vec = math::QuatToLog(error_quat);  
-      
-//     // 设置残差 (3维：roll, pitch, yaw误差)  
-//     obs.residual_.resize(3);  
-//     obs.residual_ = error_vec;  
-      
-//     // 设置雅可比矩阵 (3x23，只对旋转部分有偏导)  
-//     obs.h_x_ = Eigen::MatrixXd::Zero(3, 23);  
-//     obs.h_x_.block<3, 3>(0, 3) = Eigen::Matrix3d::Identity();  // 对旋转的偏导  
-// }
+
 void LaserMapping::ObsModel(NavState &s, ESKF::CustomObservationModel &obs) {
     int cnt_pts = scan_down_body_->size();
 

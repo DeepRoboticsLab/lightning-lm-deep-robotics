@@ -1,5 +1,6 @@
 
 common:
+  dataset: "nclt"
   lidar_topic: "/LIDAR/POINTS"
   livox_lidar_topic: "/livox/lidar"
   imu_topic: "/IMU"
@@ -33,6 +34,15 @@ fasterlio:
                  0, 1, 0,
                  0, 0, 1 ]
   keep_first_imu_estimation: false
+  kf_dis_th: 2.0
+  kf_angle_th: 5.0
+
+  enable_icp_part: false
+  plane_icp_weight: 500.0
+  min_pts: 300
+  imu_filter: false
+  proj_kfs: false
+
 
 
 g2p5:
@@ -53,6 +63,8 @@ system:
   enable_lidar_loc_skip: false
   log_pose_opt: false # 命令行打印位置和速度
   pub_odom: true
+  publish_registered_scan: false
+  registered_scan_topic: "/lightning/registered_scan_raw"
   enable_lidar_loc_rviz: false # 是否启用RViz点云发布
   rviz_current_scan_topic: "/current_scan_cloud"
   rviz_global_map_topic: "/global_map_cloud"
@@ -62,7 +74,7 @@ system:
   lidar_odom_skip_num: 2
   map_path: ./data/zjulib/
   pub_tf: true
-  use_imu_orient: true
+  use_imu_orient: false
 
 loop_closing:
   loop_kf_gap: 10       # 每隔多少个关键帧检查一次
