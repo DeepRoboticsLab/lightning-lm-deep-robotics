@@ -1,5 +1,11 @@
 # Lightning-LM Deployment Guide for Deep Robotics M20
 
+![Offline reconstruction results for all seven local M20 and Lite3 datasets](doc/images/seven-datasets-overview.png)
+
+Seven full offline replays using one executable and two shared presets: M20 and
+Lite3 / Mid360, with the height prior disabled. See
+[results, configurations and replay instructions](doc/seven-datasets.md).
+
 This guide describes how to build Lightning-LM with ROS 2 Foxy or Humble and deploy it on the Deep Robotics M20 platform equipped with a RoboSense LiDAR. The robot-specific instructions use Foxy; the desktop build instructions also cover Humble.
 
 Tutorial videos:
@@ -9,9 +15,12 @@ Tutorial videos:
 
 ## Update Notes
 
-Because the M20 has limited onboard computing power and memory, large-scale and high-density point clouds under the original configuration can be difficult to process in real time, resulting in computational delays and data backlog.
-
-In this version, the LiDAR point-cloud processing range has been appropriately reduced to decrease the number of points involved in each frame. This reduces CPU and memory usage and improves the real-time performance and stability of Lightning-LM on the M20 platform.
+This branch retains the March 18 M20 reconstruction path and adds configurable
+Mid360 gyro filtering, constant-velocity prediction and keyframe spacing. Both
+sensor families use the same compiled implementation. The linked replay guide
+documents the comparison with `shengxian886`, the saved results and remaining
+Library F revisit-alignment limitation. Desktop replay times do not establish
+real-time performance on the robot.
 
 ## 1. Dataset and Hardware Preparation
 
@@ -44,7 +53,7 @@ The Lite3 LiDAR dataset can be downloaded here:
 The following configuration file can be used to test the algorithm:
 
 ```text
-lightning-lm-deep-robotics/config/default_livox.yaml
+lightning-lm-deep-robotics/config/lite3_livox_3d.yaml
 ```
 
 The dataset also contains videos recorded while the robot was collecting LiDAR data.
@@ -172,12 +181,12 @@ source install/setup.bash
 The main configuration file for the M20 robot is:
 
 ```text
-config/default_deep_roboticsslam.yaml
+config/libraryf_march18_3d.yaml
 ```
 
 **Key configuration parameters:**
 
-* **LiDAR type:** Make sure `fasterlio.lidar_type` is set to `4`, which represents the RoboSense LiDAR.
+* **LiDAR type:** Use `fasterlio.lidar_type: 3` for the RoboSense handler in this historical core. The Mid360 preset uses `1`.
 
 * **Topics:** Check whether `common.lidar_topic` and `common.imu_topic` match the actual topics published by the rosbag or the physical robot sensors.
 
@@ -206,7 +215,7 @@ ros2 bag play ~/Downloads/m20/lidar_data_bag --clock -r 0.5
 2. **Start the online SLAM node:**
 
 ```bash
-ros2 run lightning run_slam_online --config config/default_deep_robotics.yaml
+ros2 run lightning run_slam_online --config config/libraryf_march18_3d.yaml
 ```
 
 3. **Save the map:**
@@ -238,7 +247,7 @@ Offline mapping is recommended for quickly generating a map from previously reco
 1. **Run offline SLAM:**
 
 ```bash
-ros2 run lightning run_slam_offline --input_bag path/to/lidar_data_bag_0.db3 --config config/default_deep_robotics.yaml
+ros2 run lightning run_slam_offline --input_bag path/to/lidar_data_bag_0.db3 --config config/libraryf_march18_3d.yaml
 ```
 
 **Note:** After the program finishes, the results are automatically saved to:
@@ -448,7 +457,7 @@ Mapping mode requires at least four terminal windows.
 Run:
 
 ```bash
-ros2 run lightning run_slam_online --config config/default_deep_roboticsslam.yaml
+ros2 run lightning run_slam_online --config config/libraryf_march18_3d.yaml
 ```
 
 Save the map:
