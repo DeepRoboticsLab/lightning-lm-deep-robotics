@@ -8,7 +8,7 @@ if [[ $# -gt 1 || "$bag_path" == --help ]]; then
   echo "Usage: $0 [path/to/rosbag.db3]"
   exit 0
 fi
-if [[ ! -x "$repo_dir/bin/run_slam_offline" || ! -f "$build_dir/liblightning.libs.so" ]]; then
+if [[ ! -x "$repo_dir/bin/run_slam_offline" || ! -f "$build_dir/src/liblightning.libs.so" ]]; then
   echo "Build first: bash $repo_dir/scripts/build_libraryf.sh" >&2
   exit 1
 fi
@@ -23,7 +23,9 @@ cp "$repo_dir/config/libraryf_march18_3d.yaml" "$run_dir/config.yaml"
 cpus=$(/usr/bin/python3 -c 'import os; print(",".join(map(str, sorted(os.sched_getaffinity(0))[:8])))')
 git -C "$repo_dir" rev-parse HEAD > "$run_dir/revision.txt"
 git -C "$repo_dir" diff HEAD --binary > "$run_dir/source.patch"
-sha256sum "$repo_dir/bin/run_slam_offline" "$build_dir"/*.so > "$run_dir/runtime.sha256"
+shopt -s globstar nullglob
+libraries=("$build_dir"/**/*.so)
+sha256sum "$repo_dir/bin/run_slam_offline" "${libraries[@]}" > "$run_dir/runtime.sha256"
 echo "Output directory: $run_dir"
 echo "Live visualization enabled; trajectory height is unconstrained."
 echo "Runtime CPUs: $cpus; OMP threads: 4."
@@ -38,7 +40,7 @@ env -i HOME="$HOME" USER="${USER:-ubuntu}" PATH=/usr/local/bin:/usr/bin:/bin \
   PANGOLIN_WINDOW_URI=x11:// \
   OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
   ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=87 ROS_LOG_DIR="$run_dir/ros-logs" \
-  LD_LIBRARY_PATH="$build_dir" \
+  LD_LIBRARY_PATH="$build_dir/src:$build_dir" \
   /usr/bin/time -v -o "$run_dir/resources.txt" \
   bash --noprofile --norc -c '
     set -e
