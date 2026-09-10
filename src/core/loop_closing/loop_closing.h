@@ -42,6 +42,7 @@ class LoopClosing {
         double rk_loop_th_ = 5.2 / 5;  // 回环的RK阈值
 
         bool with_height_ = true;
+        bool optimize_on_every_keyframe_ = true;
         double height_noise_ = 0.1;
     };
 

@@ -1,16 +1,18 @@
-# March 18 reconstruction, live viewer, no fixed-height prior.
+# Shared Lite3 Livox preset for all five local sequences.
+# Derived from default_livox.yaml; inactive legacy options omitted.
+# Shared Mid360 gyro/CV model and keyframe spacing; no per-route tuning.
 common:
   dataset: nclt
-  lidar_topic: /LIDAR/POINTS
+  lidar_topic: points_raw
   livox_lidar_topic: /livox/lidar
-  imu_topic: /IMU
+  imu_topic: /livox/imu
 fasterlio:
-  lidar_type: 3
+  lidar_type: 1
   scan_line: 32
-  blind: 0.5
+  blind: 0.1
   time_scale: 1e-3
   skip_lidar_num: 0
-  point_filter_num: 6
+  point_filter_num: 4
   max_iteration: 4
   filter_size_scan: 0.5
   filter_size_map: 0.5
@@ -18,10 +20,10 @@ fasterlio:
   ivox_nearby_type: 18
   esti_plane_threshold: 0.1
   use_aa: false
-  imu_filter: true
-  motion_model: inertial
-  kf_dis_th: 2.0
-  kf_angle_th: 15.0
+  imu_filter: false
+  motion_model: constant_velocity
+  kf_dis_th: 1.0
+  kf_angle_th: 10.0
   acc_cov: 0.1
   gyr_cov: 0.1
   b_acc_cov: 0.0001
@@ -30,7 +32,7 @@ fasterlio:
   extrinsic_T:
   - 0
   - 0
-  - 0.0
+  - 0.28
   extrinsic_R:
   - 1
   - 0
@@ -65,11 +67,11 @@ system:
 loop_closing:
   loop_kf_gap: 20
   min_id_interval: 20
-  closest_id_th: 20
-  max_range: 60.0
-  ndt_score_th: 1.0
+  closest_id_th: 50
+  max_range: 20.0
+  ndt_score_th: 1.3
   with_height: false
-  optimize_on_every_keyframe: true
+  optimize_on_every_keyframe: false
 lidar_loc:
   enable_dynamic_polygon: false
   enable_parking_static: true
@@ -84,7 +86,7 @@ lidar_loc:
   lidar_loc_odom_th: 0.5
   init_with_fp: true
   min_init_confidence: 1.8
-  update_dynamic_cloud: true
+  update_dynamic_cloud: false
   update_err_h: 0.2
   update_err_v: 0.2
   update_kf_dis: 2.0
@@ -120,8 +122,8 @@ pgo:
   rtk_outlier_th: 1.0
   smooth_factor: 0.01
 roi:
-  height_max: 0.5
-  height_min: -2.0
+  height_max: 10.0
+  height_min: 0.5
   range_max: 70
   range_min: 3.0
 ui:

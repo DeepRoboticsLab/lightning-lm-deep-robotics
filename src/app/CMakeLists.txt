@@ -61,5 +61,8 @@ target_link_libraries(test_ui
         ${third_party_libs}
 )
 
+add_executable(test_lio_motion_model EXCLUDE_FROM_ALL test_lio_motion_model.cc)
+target_link_libraries(test_lio_motion_model ${PROJECT_NAME}.libs ${third_party_libs})
+
 install(TARGETS run_slam_offline run_slam_online run_loc_offline run_loc_online
         DESTINATION lib/${PROJECT_NAME})

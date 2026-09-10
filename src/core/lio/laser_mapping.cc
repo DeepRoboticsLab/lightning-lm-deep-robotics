@@ -63,6 +63,21 @@ bool LaserMapping::LoadParamsFromYAML(const std::string &yaml_file) {
         ivox_options_.resolution_ = yaml["fasterlio"]["ivox_grid_resolution"].as<float>();
         ivox_nearby_type = yaml["fasterlio"]["ivox_nearby_type"].as<int>();
         use_aa_ = yaml["fasterlio"]["use_aa"].as<bool>();
+        // Preserve the historical default, but honor the Mid360 preset's raw IMU setting.
+        p_imu_->SetUseIMUFilter(yaml["fasterlio"]["imu_filter"].as<bool>(true));
+        const auto motion_model = yaml["fasterlio"]["motion_model"].as<std::string>("inertial");
+        if (motion_model != "inertial" && motion_model != "constant_velocity") {
+            LOG(ERROR) << "Unknown motion_model: " << motion_model;
+            return false;
+        }
+        kf_.SetConstantVelocity(motion_model == "constant_velocity");
+        options_.kf_dis_th_ = yaml["fasterlio"]["kf_dis_th"].as<double>(options_.kf_dis_th_);
+        options_.kf_angle_th_ =
+            yaml["fasterlio"]["kf_angle_th"].as<double>(options_.kf_angle_th_ * 180.0 / M_PI) * M_PI / 180.0;
+        if (options_.kf_dis_th_ <= 0 || options_.kf_angle_th_ <= 0) {
+            LOG(ERROR) << "Keyframe thresholds must be positive";
+            return false;
+        }
 
         skip_lidar_num_ = yaml["fasterlio"]["skip_lidar_num"].as<int>();
         enable_skip_lidar_ = skip_lidar_num_ > 0;
@@ -115,6 +130,8 @@ bool LaserMapping::LoadParamsFromYAML(const std::string &yaml_file) {
     if (!diagnostic_path.empty()) {
         std::ofstream effective(diagnostic_path + "/frontend-effective.txt");
         effective << std::setprecision(17) << "kf_dis_th=" << options_.kf_dis_th_ << "\nkf_angle_th_rad=" << options_.kf_angle_th_
+            << "\nimu_filter=" << p_imu_->UseIMUFilter()
+            << "\nmotion_model=" << (kf_.ConstantVelocity() ? "constant_velocity" : "inertial")
             << "\nuse_aa=" << use_aa_ << "\nskip_lidar=" << skip_lidar_num_ << "\nextrinsic_est_en=" << extrinsic_est_en_ << '\n';
     }
     return true;

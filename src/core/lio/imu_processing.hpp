@@ -39,6 +39,8 @@ class ImuProcess {
     void Process(const MeasureGroup &meas, ESKF &kf_state, CloudPtr &scan);
 
     bool IsIMUInited() const { return imu_need_init_ == false; }
+    void SetUseIMUFilter(bool enabled) { use_imu_filter_ = enabled; }
+    bool UseIMUFilter() const { return use_imu_filter_; }
 
     double GetMeanAccNorm() const { return mean_acc_.norm(); }
 
@@ -73,6 +75,7 @@ class ImuProcess {
     bool b_first_frame_ = true;
     bool imu_need_init_ = true;
 
+    bool use_imu_filter_ = true;
     IMUFilter filter_;
 };
 
@@ -192,9 +195,11 @@ inline void ImuProcess::UndistortPcl(const MeasureGroup &meas, ESKF &kf_state, C
     Vec3d acc = Vec3d::Zero();
     Vec3d gyro = Vec3d::Zero();
 
-    for (auto &imu : v_imu) {
-        auto imu_f = filter_.Filter(*imu);
-        *imu = imu_f;
+    if (use_imu_filter_) {
+        for (auto &imu : v_imu) {
+            auto imu_f = filter_.Filter(*imu);
+            *imu = imu_f;
+        }
     }
 
     for (auto it_imu = v_imu.begin(); it_imu < (v_imu.end() - 1); it_imu++) {
@@ -242,6 +247,10 @@ inline void ImuProcess::UndistortPcl(const MeasureGroup &meas, ESKF &kf_state, C
         acc_s_last_ = imu_state.rot_ * (acc_avr - imu_state.ba_);
         for (int i = 0; i < 3; i++) {
             acc_s_last_[i] += imu_state.grav_[i];
+        }
+        if (kf_state.ConstantVelocity()) {
+            // Deskew with the same translational model used by prediction.
+            acc_s_last_.setZero();
         }
 
         double &&offs_t = tail->timestamp - pcl_beg_time;

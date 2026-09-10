@@ -102,6 +102,9 @@ class ESKF {
     void ChangeStamp(const double& stamp) { stamp_ = stamp; }
 
     void SetUseAA(bool use_aa) { use_aa_ = use_aa; }
+    // LiDAR/gyro mode: velocity is corrected by LiDAR; acceleration is process noise.
+    void SetConstantVelocity(bool enabled) { constant_velocity_ = enabled; }
+    bool ConstantVelocity() const { return constant_velocity_; }
     void SetTime(double timestamp) { x_.timestamp_ = timestamp; }
 
     /// 迭代次数
@@ -128,6 +131,7 @@ class ESKF {
 
     /// anderson acceleration?
     bool use_aa_ = false;
+    bool constant_velocity_ = false;
     AndersonAcceleration<double, state_dim_, 10> aa_;
 };
 

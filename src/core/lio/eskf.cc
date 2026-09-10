@@ -13,6 +13,15 @@ void ESKF::Predict(const double& dt, const ESKF::ProcessNoiseType& Q, const Vec3
     Eigen::Matrix<double, 24, 12> f_w_ = x_.df_dw();
     Eigen::Matrix<double, 23, process_noise_dim_> f_w_final;
 
+    if (constant_velocity_) {
+        // p_dot = v, R_dot = R * (gyro - bg)^, v_dot = 0.
+        // Keep velocity process noise, but remove acceleration, bias and gravity
+        // coupling from both the mean and its Jacobian. Position remains fully 3D.
+        f_.segment<3>(12).setZero();
+        f_x_.block<3, 23>(12, 0).setZero();
+        f_w_.block<3, 3>(18, 9).setZero();
+    }
+
     NavState x_before = x_;
     x_.oplus(f_, dt);
 

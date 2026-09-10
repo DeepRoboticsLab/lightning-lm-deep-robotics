@@ -60,6 +60,8 @@ ament_target_dependencies(
 
 add_dependencies(${PROJECT_NAME}.libs
         livox_interfaces2__rosidl_typesupport_cpp
+        # Loaded at runtime when rosbag2 deserializes Livox CustomMsg.
+        livox_interfaces2__rosidl_typesupport_fastrtps_cpp
         ${PROJECT_NAME}__rosidl_typesupport_cpp
 )
 

@@ -53,6 +53,8 @@ void LoopClosing::Init(const std::string yaml_path) {
         options_.max_range_ = yaml.GetValue<double>("loop_closing", "max_range");
         options_.ndt_score_th_ = yaml.GetValue<double>("loop_closing", "ndt_score_th");
         options_.with_height_ = yaml.GetValue<bool>("loop_closing", "with_height");
+        options_.optimize_on_every_keyframe_ =
+            YAML::LoadFile(yaml_path)["loop_closing"]["optimize_on_every_keyframe"].as<bool>(true);
     }
 
     if (!options_.online_mode_) {
@@ -69,6 +71,7 @@ void LoopClosing::Init(const std::string yaml_path) {
                 << "\nmax_range=" << options_.max_range_
                 << "\nndt_score_th=" << options_.ndt_score_th_
                 << "\nwith_height=" << options_.with_height_
+                << "\noptimize_on_every_keyframe=" << options_.optimize_on_every_keyframe_
                 << "\nmotion_trans_noise=" << options_.motion_trans_noise_
                 << "\nmotion_rot_noise=" << options_.motion_rot_noise_
                 << "\nloop_trans_noise=" << options_.loop_trans_noise_
@@ -343,9 +346,10 @@ void LoopClosing::PoseOptimization() {
         return;
     }
 
-    // if (candidates_.empty()) {
-    //     return;
-    // }
+    // Odometry-only vertices already start at the relative-pose solution.
+    if (!options_.optimize_on_every_keyframe_ && candidates_.empty()) {
+        return;
+    }
 
     optimizer_->InitializeOptimization();
     optimizer_->SetVerbose(false);
