@@ -6,6 +6,7 @@
 #define LIGHTNING_LOOP_CLOSING_H
 
 #include "common/keyframe.h"
+#include <fstream>
 #include "common/loop_candidate.h"
 #include "utils/async_message_process.h"
 
@@ -51,6 +52,7 @@ class LoopClosing {
 
     /// 向回环中添加一个关键帧
     void AddKF(Keyframe::Ptr kf);
+    void ExportFinalDiagnostics();
 
     /// 如果检测到新地回环并发生了优化，则调用回调
     using LoopClosedCallback = std::function<void()>;
@@ -70,6 +72,10 @@ class LoopClosing {
     /// 优化位姿
     void PoseOptimization();
 
+    void DiagnosticSnapshot(const char* phase);
+    void DiagnosticEdges(const char* phase);
+    std::string diagnostics_dir_;
+    std::ofstream diagnostics_snapshots_, diagnostics_candidates_, diagnostics_edges_, diagnostics_solves_;
     Options options_;
 
     Keyframe::Ptr last_kf_ = nullptr;

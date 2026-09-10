@@ -1,6 +1,4 @@
 #include <pangolin/display/default_font.h>
-#include <iomanip>
-#include <sstream>
 #include <string>
 #include <thread>
 
@@ -34,7 +32,6 @@ bool PangolinWindowImpl::Init() {
     /// data log
     log_vel_.SetLabels(std::vector<std::string>{"vel_x", "vel_y", "vel_z"});
     log_vel_baselink_.SetLabels(std::vector<std::string>{"baselink_vel_x", "baselink_vel_y", "baselink_vel_z"});
-    log_bias_acc_.SetLabels(std::vector<std::string>{"ba_x", "ba_y", "ba_z"});
     log_confidence_.SetLabels(std::vector<std::string>{"lidar loc confidence"});
     log_error_.SetLabels(std::vector<std::string>{"err v", "err h", "err eval v", "err eval h"});
 
@@ -56,7 +53,7 @@ void PangolinWindowImpl::Reset(const std::vector<Keyframe::Ptr> &keyframes) {
     for (; i < keyframes.size(); ++i) {
         const auto &keyframe = keyframes.at(i);
         current_scan_ui_ = std::make_shared<ui::UiCloud>();
-        CloudPtr tmp_cloud(new PointCloudType(*keyframe->GetCloud()));
+        CloudPtr tmp_cloud = std::make_shared<PointCloudType>(*(keyframe->GetCloud()));
         current_scan_ui_->SetCloud(math::VoxelGrid(tmp_cloud, 0.5), keyframe->GetOptPose());
         current_scan_ui_->SetRenderColor(ui::UiCloud::UseColor::HEIGHT_COLOR);
 
@@ -149,10 +146,7 @@ bool PangolinWindowImpl::UpdateCurrentScan() {
 
         current_scan_ui_ = std::make_shared<ui::UiCloud>();
         current_scan_ui_->SetCloud(current_scan_, current_scan_pose_);
-        // current_scan_ui_->SetRenderColor(ui::UiCloud::UseColor::CUSTOM_COLOR);
         current_scan_ui_->SetRenderColor(ui::UiCloud::UseColor::HEIGHT_COLOR);
-        // current_scan_ui_->SetCustomColor(Vec4f(1.0, 1.0, 1.0, 1.0));
-        // current_scan_ui_->SetPointSize(2.0);
 
         current_scan_need_update_.store(false);
 
@@ -183,16 +177,10 @@ bool PangolinWindowImpl::UpdateState() {
     // 滤波器状态作曲线图
     log_vel_.Log(vel_(0), vel_(1), vel_(2));
     log_vel_baselink_.Log(vel_baselink(0), vel_baselink(1), vel_baselink(2));
-    log_bias_acc_.Log(bias_acc_(0), bias_acc_(1), bias_acc_(2));
     log_confidence_.Log(confidence_);
 
     newest_frontend_pose_ = pose_;
     traj_newest_state_->AddPt(newest_frontend_pose_);
-
-    std::ostringstream ss;
-    ss << std::fixed << std::setprecision(4) << "ba: [" << bias_acc_(0) << ", " << bias_acc_(1) << ", " << bias_acc_(2)
-       << "]";
-    gltext_label_state_ = pangolin::default_font().Text(ss.str());
 
     kf_result_need_update_.store(false);
     return false;
@@ -230,14 +218,12 @@ void PangolinWindowImpl::DrawAll() {
         backend_car_.Render();
     }
 
-    // pred_car_.SetPose(predicted_pose_);
-    // pred_car_.Render();
-
     // 关键帧
     {
         UL lock(mtx_current_scan_);
 
         if (all_keyframes_.size() > 1) {
+
             /// 闭环后的轨迹
             glLineWidth(5.0);
             glBegin(GL_LINE_STRIP);
@@ -296,10 +282,6 @@ void PangolinWindowImpl::RenderLabels() {
     glColor3ub(127, 127, 127);
     gltext_label_global_.Draw();
 
-    glTranslatef(0.0f, -1.5f * gltext_label_global_.Height(), 0.0f);
-    glColor3ub(180, 220, 180);
-    gltext_label_state_.Draw();
-
     // Restore modelview / project matrices
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
@@ -333,9 +315,6 @@ void PangolinWindowImpl::CreateDisplayLayout() {
     plotter_vel_baselink_ = std::make_unique<pangolin::Plotter>(&log_vel_baselink_, -10, 600, -11, 11, 75, 2);
     plotter_vel_baselink_->SetBounds(0.02, 0.98, 0.0, 1.0);
     plotter_vel_baselink_->Track("$i");
-    plotter_bias_acc_ = std::make_unique<pangolin::Plotter>(&log_bias_acc_, -10, 600, -1, 1, 75, 0.1);
-    plotter_bias_acc_->SetBounds(0.02, 0.98, 0.0, 1.0);
-    plotter_bias_acc_->Track("$i");
     plotter_confidence_ = std::make_unique<pangolin::Plotter>(&log_confidence_, -10, 600, 0, 5.0, 100, 0.5);
     plotter_confidence_->SetBounds(0.02, 0.98, 0.0, 1.0);
     plotter_confidence_->Track("$i");
@@ -348,7 +327,6 @@ void PangolinWindowImpl::CreateDisplayLayout() {
                                  .SetLayout(pangolin::LayoutEqualVertical)
                                  .AddDisplay(*plotter_confidence_)
                                  .AddDisplay(*plotter_err_)
-                                 .AddDisplay(*plotter_bias_acc_)
                                  .AddDisplay(*plotter_vel_)
                                  .AddDisplay(*plotter_vel_baselink_);
     pangolin::Display(dis_main_name_)
@@ -369,7 +347,7 @@ void PangolinWindowImpl::Render() {
     pangolin::CreatePanel("menu").SetBounds(0.0, 1.0, 0.0, pangolin::Attach::Pix(menu_width_));
     pangolin::Var<bool> menu_follow_loc("menu.Follow", false, true);                     // 跟踪实时定位
     pangolin::Var<bool> menu_draw_frontend_traj("menu.Draw Frontend Traj", true, true);  // 前端实时轨迹
-    pangolin::Var<bool> menu_draw_backend_traj("menu.Draw Backend Traj", true, true);    // 后端实时轨迹
+    pangolin::Var<bool> menu_draw_backend_traj("menu.Draw Backend Traj", false, true);   // 后端实时轨迹
     pangolin::Var<bool> menu_reset_3d_view("menu.Reset 3D View", false, false);          // 重置俯视视角
     pangolin::Var<bool> menu_reset_front_view("menu.Set to front View", false, false);   // 前视视角
     pangolin::Var<bool> menu_step("menu.Step", false, false);                            // 单步调试
@@ -429,7 +407,9 @@ void PangolinWindowImpl::Render() {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 
-    // unset the current context from the main thread
+    // Plotter shaders must be destroyed on the rendering thread while its
+    // context is current. DeInit() can be called again after this thread joins.
+    ReleaseBuffer();
     pangolin::GetBoundWindow()->RemoveCurrent();
     pangolin::DestroyWindow(GetWindowName());
 }
@@ -443,9 +423,17 @@ void PangolinWindowImpl::AllocateBuffer() {
         "Red: newest IMU pose, yellow: lidar scan pose");
     auto &font = pangolin::default_font();
     gltext_label_global_ = font.Text(global_text);
-    gltext_label_state_ = font.Text("ba: [0.0000, 0.0000, 0.0000]");
 }
 
-void PangolinWindowImpl::ReleaseBuffer() {}
+void PangolinWindowImpl::ReleaseBuffer() {
+    // Named views retain non-owning pointers to these plotters. They are not
+    // rendered again after shutdown, and their shader-owning objects must not
+    // survive the OpenGL context.
+    plotter_vel_.reset();
+    plotter_vel_baselink_.reset();
+    plotter_confidence_.reset();
+    plotter_err_.reset();
+    plotter_err_eval_.reset();
+}
 
 }  // namespace lightning::ui

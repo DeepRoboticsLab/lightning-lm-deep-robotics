@@ -9,6 +9,7 @@
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <string>
+#include <fstream>
 
 #include "lightning/srv/save_map.hpp"
 #include "livox_ros_driver2/msg/custom_msg.hpp"
@@ -78,6 +79,8 @@ class SlamSystem {
     /// ros端保存地图的实现
     void SaveMap(const SaveMapService::Request::SharedPtr request, SaveMapService::Response::SharedPtr response);
 
+    std::string diagnostics_dir_;
+    std::ofstream diagnostics_lio_;
     Options options_;
     std::atomic_bool running_ = false;
 

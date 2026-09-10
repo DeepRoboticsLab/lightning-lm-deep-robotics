@@ -6,6 +6,8 @@
 **data
 **/.vscode/
 bin
+/outputs/
+/libraryf-build/
 
 **cmake-build-debug**
 **cmake-build-release**

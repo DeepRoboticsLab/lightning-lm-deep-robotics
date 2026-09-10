@@ -21,10 +21,6 @@ void PointCloudPreprocess::Process(const sensor_msgs::msg::PointCloud2 ::SharedP
             VelodyneHandler(msg);
             break;
 
-        case LidarType::ROBOSENSE:
-            RoboSenseHandler(msg);
-            break;
-
         default:
             LOG(ERROR) << "Error LiDAR Type";
             break;
@@ -49,34 +45,27 @@ void PointCloudPreprocess::Process(const livox_ros_driver2::msg::CustomMsg::Shar
     }
 
     std::for_each(std::execution::par_unseq, index.begin(), index.end(), [&](const uint &i) {
-        // if ((msg->points[i].line < num_scans_) &&
-        // ((msg->points[i].tag & 0x30) == 0x10 || (msg->points[i].tag & 0x30) == 0x00)) {
-        if (i % point_filter_num_ != 0) {
-            return;
+        if ((msg->points[i].line < num_scans_) &&
+            ((msg->points[i].tag & 0x30) == 0x10 || (msg->points[i].tag & 0x30) == 0x00)) {
+            if (i % point_filter_num_ == 0) {
+                cloud_full_[i].x = msg->points[i].x;
+                cloud_full_[i].y = msg->points[i].y;
+                cloud_full_[i].z = msg->points[i].z;
+                cloud_full_[i].intensity = msg->points[i].reflectivity;
+
+                // use curvature as time of each laser points, curvature unit: ms
+                cloud_full_[i].timestamp = msg->points[i].offset_time / double(1000000);
+
+                if ((abs(cloud_full_[i].x - cloud_full_[i - 1].x) > 1e-7) ||
+                    (abs(cloud_full_[i].y - cloud_full_[i - 1].y) > 1e-7) ||
+                    (abs(cloud_full_[i].z - cloud_full_[i - 1].z) > 1e-7) &&
+                        (cloud_full_[i].x * cloud_full_[i].x + cloud_full_[i].y * cloud_full_[i].y +
+                             cloud_full_[i].z * cloud_full_[i].z >
+                         (blind_ * blind_))) {
+                    is_valid_pt[i] = 1;
+                }
+            }
         }
-
-        cloud_full_[i].x = msg->points[i].x;
-        cloud_full_[i].y = msg->points[i].y;
-        cloud_full_[i].z = msg->points[i].z;
-        cloud_full_[i].intensity = msg->points[i].reflectivity;
-
-        // use curvature as time of each laser points, curvature unit: ms
-        cloud_full_[i].time = msg->points[i].offset_time / double(1000000);
-
-        if (cloud_full_[i].z < height_min_ || cloud_full_[i].z > height_max_) {
-            return;
-        }
-
-        if ((abs(cloud_full_[i].x - cloud_full_[i - 1].x) > 1e-7) ||
-            (abs(cloud_full_[i].y - cloud_full_[i - 1].y) > 1e-7) ||
-            (abs(cloud_full_[i].z - cloud_full_[i - 1].z) > 1e-7) &&
-                (cloud_full_[i].x * cloud_full_[i].x + cloud_full_[i].y * cloud_full_[i].y +
-                     cloud_full_[i].z * cloud_full_[i].z >
-                 (blind_ * blind_))) {
-            is_valid_pt[i] = 1;
-        }
-
-        // }
     });
 
     for (uint i = 1; i < plsize; i++) {
@@ -95,10 +84,12 @@ void PointCloudPreprocess::Oust64Handler(const sensor_msgs::msg::PointCloud2::Sh
     cloud_out_.clear();
     cloud_full_.clear();
 
-    pcl::PointCloud<ouster_ros::Point> pl_orig;
+    pcl::PointCloud<PointType> pl_orig;
     pcl::fromROSMsg(*msg, pl_orig);
     int plsize = pl_orig.size();
     cloud_out_.reserve(plsize);
+
+    double head_time = msg->header.stamp.sec + msg->header.stamp.nanosec / 1e9;
 
     for (int i = 0; i < pl_orig.points.size(); i++) {
         if (i % point_filter_num_ != 0) {
@@ -112,62 +103,13 @@ void PointCloudPreprocess::Oust64Handler(const sensor_msgs::msg::PointCloud2::Sh
             continue;
         }
 
-        if (pl_orig.points[i].z < height_min_ || pl_orig.points[i].z > height_max_) {
-            continue;
-        }
-
         PointType added_pt;
         added_pt.x = pl_orig.points[i].x;
         added_pt.y = pl_orig.points[i].y;
         added_pt.z = pl_orig.points[i].z;
         added_pt.intensity = pl_orig.points[i].intensity;
 
-        added_pt.time = pl_orig.points[i].t / 1e6;
-        cloud_out_.points.push_back(added_pt);
-    }
-
-    cloud_out_.width = cloud_out_.size();
-    cloud_out_.height = 1;
-    cloud_out_.is_dense = false;
-}
-
-void PointCloudPreprocess::RoboSenseHandler(const sensor_msgs::msg::PointCloud2::SharedPtr &msg) {
-    cloud_out_.clear();
-    cloud_full_.clear();
-
-    pcl::PointCloud<PointRobotSense> pl_orig;
-    pcl::fromROSMsg(*msg, pl_orig);
-
-    int plsize = pl_orig.size();
-    cloud_out_.reserve(plsize);
-
-    double start_time = pl_orig.points[0].timestamp;
-
-    /// RoboSense的时间戳是double, 均为linux时间且单位为秒，这里减去header time并乘以1000得到毫秒为单位的时间戳
-
-    for (int i = 0; i < pl_orig.points.size(); i++) {
-        if (i % point_filter_num_ != 0) {
-            continue;
-        }
-
-        double range = pl_orig.points[i].x * pl_orig.points[i].x + pl_orig.points[i].y * pl_orig.points[i].y +
-                       pl_orig.points[i].z * pl_orig.points[i].z;
-
-        if (range < (blind_ * blind_)) {
-            continue;
-        }
-
-//        if (pl_orig.points[i].z < height_min_ || pl_orig.points[i].z > height_max_) {
-//            continue;
-//        }
-
-        PointType added_pt;
-        added_pt.x = pl_orig.points[i].x;
-        added_pt.y = pl_orig.points[i].y;
-        added_pt.z = pl_orig.points[i].z;
-        added_pt.intensity = pl_orig.points[i].intensity;
-
-        added_pt.time = (pl_orig.points[i].timestamp - start_time) * 1e3;  //  / 1e6;  // curvature unit: ms
+        added_pt.timestamp = (pl_orig.points[i].timestamp - head_time) * 1e3;  //  / 1e6;  // curvature unit: ms
 
         cloud_out_.points.push_back(added_pt);
     }
@@ -216,7 +158,7 @@ void PointCloudPreprocess::VelodyneHandler(const sensor_msgs::msg::PointCloud2::
         added_pt.y = pl_orig.points[i].y;
         added_pt.z = pl_orig.points[i].z;
         added_pt.intensity = pl_orig.points[i].intensity;
-        added_pt.time = pl_orig.points[i].time * time_scale_;  // curvature unit: ms
+        added_pt.timestamp = pl_orig.points[i].time * time_scale_;  // curvature unit: ms
 
         if (!given_offset_time_) {
             int layer = pl_orig.points[i].ring;
@@ -225,25 +167,25 @@ void PointCloudPreprocess::VelodyneHandler(const sensor_msgs::msg::PointCloud2::
             if (is_first[layer]) {
                 yaw_fp[layer] = yaw_angle;
                 is_first[layer] = false;
-                added_pt.time = 0.0;
+                added_pt.timestamp = 0.0;
                 yaw_last[layer] = yaw_angle;
-                time_last[layer] = added_pt.time;
+                time_last[layer] = added_pt.timestamp;
                 continue;
             }
 
             // compute offset time
             if (yaw_angle <= yaw_fp[layer]) {
-                added_pt.time = (yaw_fp[layer] - yaw_angle) / omega_l;
+                added_pt.timestamp = (yaw_fp[layer] - yaw_angle) / omega_l;
             } else {
-                added_pt.time = (yaw_fp[layer] - yaw_angle + 360.0) / omega_l;
+                added_pt.timestamp = (yaw_fp[layer] - yaw_angle + 360.0) / omega_l;
             }
 
-            if (added_pt.time < time_last[layer]) {
-                added_pt.time += 360.0 / omega_l;
+            if (added_pt.timestamp < time_last[layer]) {
+                added_pt.timestamp += 360.0 / omega_l;
             }
 
             yaw_last[layer] = yaw_angle;
-            time_last[layer] = added_pt.time;
+            time_last[layer] = added_pt.timestamp;
         }
 
         if (i % point_filter_num_ == 0) {

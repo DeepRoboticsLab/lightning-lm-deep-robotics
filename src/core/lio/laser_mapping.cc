@@ -1,6 +1,7 @@
 #include <pcl/common/transforms.h>
 #include <yaml-cpp/yaml.h>
 #include <fstream>
+#include "utils/reconstruction_diagnostics.h"
 
 #include "common/options.h"
 #include "core/lightning_math.hpp"
@@ -24,10 +25,8 @@ bool LaserMapping::Init(const std::string &config_yaml) {
     eskf_options.max_iterations_ = fasterlio::NUM_MAX_ITERATIONS;
     eskf_options.epsi_ = 1e-3 * Eigen::Matrix<double, 23, 1>::Ones();
     eskf_options.lidar_obs_func_ = [this](NavState &s, ESKF::CustomObservationModel &obs) { ObsModel(s, obs); };
-    eskf_options.orientation_obs_func_ = [this](NavState &s, ESKF::CustomObservationModel &obs) { OriObsModel(s, obs); };
     eskf_options.use_aa_ = use_aa_;
     kf_.Init(eskf_options);
-    kf_imu_.Init(eskf_options);
 
     return true;
 }
@@ -64,15 +63,9 @@ bool LaserMapping::LoadParamsFromYAML(const std::string &yaml_file) {
         ivox_options_.resolution_ = yaml["fasterlio"]["ivox_grid_resolution"].as<float>();
         ivox_nearby_type = yaml["fasterlio"]["ivox_nearby_type"].as<int>();
         use_aa_ = yaml["fasterlio"]["use_aa"].as<bool>();
-        use_imu_orient_ = yaml["system"]["use_imu_orient"] ? yaml["system"]["use_imu_orient"].as<bool>() : false;
 
         skip_lidar_num_ = yaml["fasterlio"]["skip_lidar_num"].as<int>();
         enable_skip_lidar_ = skip_lidar_num_ > 0;
-
-        float height_max = yaml["roi"]["height_max"].as<float>();
-        float height_min = yaml["roi"]["height_min"].as<float>();
-
-        preprocess_->SetHeightROI(height_max, height_min);
 
     } catch (...) {
         LOG(ERROR) << "bad conversion";
@@ -89,9 +82,6 @@ bool LaserMapping::LoadParamsFromYAML(const std::string &yaml_file) {
     } else if (lidar_type == 3) {
         preprocess_->SetLidarType(LidarType::OUST64);
         LOG(INFO) << "Using OUST 64 Lidar";
-    } else if (lidar_type == 4) {
-        preprocess_->SetLidarType(LidarType::ROBOSENSE);
-        LOG(INFO) << "Using RoboSense Lidar";
     } else {
         LOG(WARNING) << "unknown lidar_type";
         return false;
@@ -121,27 +111,18 @@ bool LaserMapping::LoadParamsFromYAML(const std::string &yaml_file) {
     p_imu_->SetGyrBiasCov(Vec3d(b_gyr_cov, b_gyr_cov, b_gyr_cov));
     p_imu_->SetAccBiasCov(Vec3d(b_acc_cov, b_acc_cov, b_acc_cov));
 
+    const auto diagnostic_path = diagnostics::Directory(yaml_file);
+    if (!diagnostic_path.empty()) {
+        std::ofstream effective(diagnostic_path + "/frontend-effective.txt");
+        effective << std::setprecision(17) << "kf_dis_th=" << options_.kf_dis_th_ << "\nkf_angle_th_rad=" << options_.kf_angle_th_
+            << "\nuse_aa=" << use_aa_ << "\nskip_lidar=" << skip_lidar_num_ << "\nextrinsic_est_en=" << extrinsic_est_en_ << '\n';
+    }
     return true;
 }
 
 LaserMapping::LaserMapping(Options options) : options_(options) {
     preprocess_.reset(new PointCloudPreprocess());
     p_imu_.reset(new ImuProcess());
-}
-
-void LaserMapping::SetInitPose(const SE3 &pose) {
-    LOG(INFO) << "initial pose lio: " << pose.so3().unit_quaternion().coeffs().transpose();
-    auto x = kf_imu_.GetX();
-    x.rot_ = SO3(pose.unit_quaternion());
-    x.pos_ = pose.translation();
-    kf_imu_.ChangeX(x);
-
-    x = kf_.GetX();
-    x.rot_ = SO3(pose.unit_quaternion());
-    x.pos_ = pose.translation();
-    kf_.ChangeX(x);
-
-    LOG(INFO) << "set initial translatoin in laser mapping: " << pose.translation().transpose();
 }
 
 void LaserMapping::ProcessIMU(const lightning::IMUPtr &imu) {
@@ -159,13 +140,6 @@ void LaserMapping::ProcessIMU(const lightning::IMUPtr &imu) {
         /// 更新最新imu状态
         kf_imu_.Predict(timestamp - last_timestamp_imu_, p_imu_->Q_, imu->angular_velocity, imu->linear_acceleration);
 
-        // 使用 IMU 朝向观测进行更新。
-        // 这里将观测方差固定为 0.01 rad^2（约 0.1 rad ≈ 5.7° 的 1σ 误差），作为中等精度 IMU 的经验值。
-        // 若使用更高/更低精度的 IMU，可根据陀螺噪声特性离线标定后调整该值，以平衡预测与观测的权重。
-        if (use_imu_orient_) {
-            kf_imu_.Update(ESKF::ObsType::ORIENTATION, 0.01);
-        }
-
         // LOG(INFO) << "newest wrt lidar: " << timestamp - kf_.GetX().timestamp_;
 
         /// 更新ui
@@ -175,7 +149,6 @@ void LaserMapping::ProcessIMU(const lightning::IMUPtr &imu) {
     }
 
     last_timestamp_imu_ = timestamp;
-    last_imu_ = imu;
 
     imu_buffer_.emplace_back(imu);
 }
@@ -246,7 +219,7 @@ bool LaserMapping::Run() {
         LOG(WARNING) << "Too few points, skip this scan!" << scan_undistort_->size() << ", " << scan_down_body_->size();
         return false;
     }
-    
+
     if (cur_pts < (scan_undistort_->size() * 0.1)) {
         /// 降采样太狠了,有效点数不够，用
 
@@ -268,10 +241,6 @@ bool LaserMapping::Run() {
             plane_coef_.resize(cur_pts, Vec4f::Zero());
 
             auto old_state = kf_.GetX();
-
-            if (use_imu_orient_) {
-                kf_.Update(ESKF::ObsType::ORIENTATION, 0.01);
-            }
 
             kf_.Update(ESKF::ObsType::LIDAR, 1e-3);
             state_point_ = kf_.GetX();
@@ -297,11 +266,9 @@ bool LaserMapping::Run() {
 
     // update local map
     Timer::Evaluate([&, this]() { MapIncremental(); }, "    Incremental Mapping");
+
     LOG(INFO) << "[ mapping ]: In num: " << scan_undistort_->points.size() << " down " << cur_pts
               << " Map grid num: " << ivox_->NumValidGrids() << " effect num : " << effect_feat_num_;
-    // printf("\rlaser_mapping.cc:251] [ mapping ]: In num: %lu down %d Map grid num: %lu effect num : %d            ",
-    //        scan_undistort_->points.size(), cur_pts, ivox_->NumValidGrids(), effect_feat_num_);
-    // fflush(stdout);
 
     /// keyframes
     if (last_kf_ == nullptr) {
@@ -353,12 +320,8 @@ void LaserMapping::MakeKF() {
 
     LOG(INFO) << "LIO: create kf " << kf->GetID() << ", state: " << state_point_.pos_.transpose()
               << ", kf opt pose: " << kf->GetOptPose().translation().transpose()
-              << ", lio pose: " << kf->GetLIOPose().translation().transpose();
-
-    // printf("\033[34m\rlaser_mapping.cc:302] LIO: create kf %d, state: [%.3f, %.3f, %.3f], kf opt pose: [%.3f, %.3f, %.3f]\033[0m           ",
-    //        kf->GetID(), state_point_.pos_.x(), state_point_.pos_.y(), state_point_.pos_.z(),
-    //        kf->GetOptPose().translation().x(), kf->GetOptPose().translation().y(), kf->GetOptPose().translation().z());
-    // fflush(stdout);
+              << ", lio pose: " << kf->GetLIOPose().translation().transpose() << ", time: " << std::setprecision(14)
+              << state_point_.timestamp_;
 
     if (options_.is_in_slam_mode_) {
         all_keyframes_.emplace_back(kf);
@@ -374,16 +337,12 @@ void LaserMapping::ProcessPointCloud2(const sensor_msgs::msg::PointCloud2::Share
             scan_count_++;
             double timestamp = ToSec(msg->header.stamp);
             if (timestamp < last_timestamp_lidar_) {
-                LOG(ERROR) << "lidar loop back, clear buffer";
-                // lidar_buffer_.clear();
                 LOG(ERROR) << "lidar loop back, dt: " << timestamp - last_timestamp_lidar_;
                 return;
             }
+
             LOG(INFO) << "get cloud at " << std::setprecision(14) << timestamp
                       << ", latest imu: " << last_timestamp_imu_;
-
-            // printf("\rlaser_mapping.cc:324] get cloud at %.14f, latest imu: %.14f           ", timestamp, last_timestamp_imu_);
-            // fflush(stdout);
 
             CloudPtr cloud(new PointCloudType());
             preprocess_->Process(msg, cloud);
@@ -451,13 +410,13 @@ bool LaserMapping::SyncPackages() {
         if (measures_.scan_->points.size() <= 1) {
             LOG(WARNING) << "Too few input point cloud!";
             lidar_end_time_ = measures_.lidar_begin_time_ + lidar_mean_scantime_;
-        } else if (measures_.scan_->points.back().time / double(1000) < 0.5 * lidar_mean_scantime_) {
+        } else if (measures_.scan_->points.back().timestamp / double(1000) < 0.5 * lidar_mean_scantime_) {
             lidar_end_time_ = measures_.lidar_begin_time_ + lidar_mean_scantime_;
         } else {
             scan_num_++;
-            lidar_end_time_ = measures_.lidar_begin_time_ + measures_.scan_->points.back().time / double(1000);
+            lidar_end_time_ = measures_.lidar_begin_time_ + measures_.scan_->points.back().timestamp / double(1000);
             lidar_mean_scantime_ +=
-                (measures_.scan_->points.back().time / double(1000) - lidar_mean_scantime_) / scan_num_;
+                (measures_.scan_->points.back().timestamp / double(1000) - lidar_mean_scantime_) / scan_num_;
         }
 
         lo::lidar_time_interval = lidar_mean_scantime_;
@@ -562,11 +521,6 @@ void LaserMapping::MapIncremental() {
  * @param s kf state
  * @param ekfom_data H matrix
  */
-void LaserMapping::OriObsModel(NavState &s, ESKF::CustomObservationModel &obs) {
-    (void)s;
-    obs.valid_ = false;
-}
-
 void LaserMapping::ObsModel(NavState &s, ESKF::CustomObservationModel &obs) {
     int cnt_pts = scan_down_body_->size();
 
@@ -673,7 +627,6 @@ void LaserMapping::ObsModel(NavState &s, ESKF::CustomObservationModel &obs) {
                         0.0, 0.0, 0.0, 0.0;
                 }
 
-                /*** Measurement: distance to the closest surface/corner ***/
                 /// 增加了cauchy's robust kernel
                 float res = -corr_pts_[i][3];
                 float rho, drho;
@@ -747,7 +700,7 @@ CloudPtr LaserMapping::GetGlobalMap(bool use_lio_pose, bool use_voxel, float res
 
         *global_map += *cloud_trans;
 
-        // LOG(INFO) << "kf " << kf->GetID() << ", pose: " << kf->GetOptPose().translation().transpose();
+        LOG(INFO) << "kf " << kf->GetID() << ", pose: " << kf->GetOptPose().translation().transpose();
     }
 
     CloudPtr global_map_filtered(new PointCloudType);
@@ -782,16 +735,6 @@ CloudPtr LaserMapping::GetRecentCloud() {
     }
 
     return lidar_buffer_.front();
-}
-
-SE3 LaserMapping::GetOptPose() const {
-    if (last_kf_ == nullptr) {
-        return state_point_.GetPose();
-    }
-
-    // 基于当前帧相对lastKF的LIO位姿，得到回环后的位姿
-    SE3 delta = last_kf_->GetLIOPose().inverse() * state_point_.GetPose();
-    return last_kf_->GetOptPose() * delta;
 }
 
 }  // namespace lightning

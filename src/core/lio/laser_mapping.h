@@ -69,8 +69,6 @@ class LaserMapping {
 
     void ProcessIMU(const lightning::IMUPtr &msg_in);
 
-    void SetInitPose(const SE3 &pose);
-
     /// 保存前端的地图
     void SaveMap();
 
@@ -81,9 +79,6 @@ class LaserMapping {
 
     /// 获取激光的状态
     NavState GetState() const { return state_point_; }
-
-    /// 获取经过回环优化后的位姿
-    SE3 GetOptPose() const;
 
     /// 获取IMU状态
     NavState GetIMUState() const {
@@ -97,8 +92,6 @@ class LaserMapping {
     }
 
     CloudPtr GetScanUndist() const { return scan_undistort_; }
-    CloudPtr GetScanDownWorld() const { return scan_down_world_; }
-    pcl::VoxelGrid<PointType>& GetVoxelFilter() { return voxel_scan_; }
 
     /// 获取最新的点云
     CloudPtr GetRecentCloud();
@@ -117,8 +110,6 @@ class LaserMapping {
     bool SyncPackages();
 
     void ObsModel(NavState &s, ESKF::CustomObservationModel &obs);
-
-    void OriObsModel(NavState &s, ESKF::CustomObservationModel &obs);
 
     inline void PointBodyToWorld(const PointType &pi, PointType &po) {
         Vec3d p_global(state_point_.rot_ * (state_point_.offset_R_lidar_ * pi.getVector3fMap().cast<double>() +
@@ -177,7 +168,6 @@ class LaserMapping {
 
     std::deque<PointCloudType::Ptr> lidar_buffer_;
     std::deque<lightning::IMUPtr> imu_buffer_;
-    lightning::IMUPtr last_imu_ = nullptr;
 
     /// options
     bool keep_first_imu_estimation_ = false;    // 在没有建立地图前，是否要使用前几帧的IMU状态
@@ -202,8 +192,6 @@ class LaserMapping {
     int effect_feat_num_ = 0, frame_num_ = 0;
 
     double last_lidar_time_ = 0;
-
-    bool use_imu_orient_ = false;
 
     ///////////////////////// EKF inputs and output ///////////////////////////////////////////////////////
     MeasureGroup measures_;  // sync IMU and lidar scan

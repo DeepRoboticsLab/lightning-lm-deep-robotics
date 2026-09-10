@@ -3,6 +3,7 @@
 //
 
 #include "core/system/slam.h"
+#include "utils/reconstruction_diagnostics.h"
 #include "core/g2p5/g2p5.h"
 #include "core/lio/laser_mapping.h"
 #include "core/loop_closing/loop_closing.h"
@@ -28,6 +29,13 @@ bool SlamSystem::Init(const std::string& yaml_path) {
         return false;
     }
 
+    if (!options_.online_mode_) {
+        diagnostics_dir_ = diagnostics::Directory(yaml_path);
+        if (!diagnostics_dir_.empty()) {
+            diagnostics::Open(diagnostics_lio_, diagnostics_dir_ + "/lio.csv",
+                              "timestamp,x,y,z,qx,qy,qz,qw");
+        }
+    }
     auto yaml = YAML::LoadFile(yaml_path);
     options_.with_loop_closing_ = yaml["system"]["with_loop_closing"].as<bool>();
     options_.with_visualization_ = yaml["system"]["with_ui"].as<bool>();
@@ -114,7 +122,7 @@ bool SlamSystem::Init(const std::string& yaml_path) {
             });
 
         savemap_service_ = node_->create_service<SaveMapService>(
-            "lightning/save_map", [this](SaveMapService::Request::SharedPtr req,
+            "lightning/save_map", [this](const SaveMapService::Request::SharedPtr& req,
                                          SaveMapService::Response::SharedPtr res) { SaveMap(req, res); });
 
         LOG(INFO) << "online slam node has been created.";
@@ -228,6 +236,18 @@ void SlamSystem::SaveMap(const std::string& path) {
         }
     }
 
+    if (!diagnostics_dir_.empty()) {
+        diagnostics::Keyframes(diagnostics_dir_, lio_->GetAllKeyframes());
+        std::filesystem::create_directories(diagnostics_dir_ + "/clouds");
+        for (const auto& kf : lio_->GetAllKeyframes()) {
+            pcl::io::savePCDFileBinaryCompressed(diagnostics_dir_ + "/clouds/" +
+                std::to_string(kf->GetID()) + ".pcd", *kf->GetCloud());
+        }
+        diagnostics_lio_.flush();
+        if (lc_) lc_->ExportFinalDiagnostics();
+        std::ofstream state(diagnostics_dir_ + "/finalization.txt");
+        state << "offline synchronous bag processing complete; map saved; no final graph refinement\n";
+    }
     LOG(INFO) << "map saved";
 }
 
@@ -244,7 +264,13 @@ void SlamSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr& cl
     }
 
     lio_->ProcessPointCloud2(cloud);
-    lio_->Run();
+    bool processed = lio_->Run();
+    if (processed && diagnostics_lio_.is_open()) {
+        const auto state = lio_->GetState();
+        diagnostics_lio_ << state.timestamp_ << ',';
+        diagnostics::Pose(diagnostics_lio_, state.GetPose());
+        diagnostics_lio_ << '\n';
+    }
 
     auto kf = lio_->GetKeyframe();
     if (kf != cur_kf_) {
@@ -276,7 +302,13 @@ void SlamSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr
     }
 
     lio_->ProcessPointCloud2(cloud);
-    lio_->Run();
+    bool processed = lio_->Run();
+    if (processed && diagnostics_lio_.is_open()) {
+        const auto state = lio_->GetState();
+        diagnostics_lio_ << state.timestamp_ << ',';
+        diagnostics::Pose(diagnostics_lio_, state.GetPose());
+        diagnostics_lio_ << '\n';
+    }
 
     auto kf = lio_->GetKeyframe();
     if (kf != cur_kf_) {
