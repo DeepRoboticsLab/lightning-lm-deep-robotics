@@ -9,7 +9,8 @@ point clouds. Both sensor presets use the same four online and offline applicati
 ## 1. Install and build
 
 Supports **Ubuntu 20.04 / ROS 2 Foxy** and **Ubuntu 22.04 / ROS 2 Humble**.
-Use an OpenGL desktop for visualization.
+Use an OpenGL desktop for visualization. For an M20 Pro without internet access,
+follow [onboard deployment](#5-deploy-from-a-laptop-to-the-robot).
 Run these commands from the repository root in a fresh Bash terminal:
 
 ```bash
@@ -39,7 +40,7 @@ versions to keep generated interfaces and libraries consistent.
 
 The installer uses `sudo apt-get` for missing dependencies. The build uses all
 CPUs, builds the bundled Pangolin source into `.deps`, and installs the ROS package
-locally. On a computer with limited RAM, including the RK3588, start with:
+locally. On a workstation with limited RAM, reduce the job count:
 
 ```bash
 CMAKE_BUILD_PARALLEL_LEVEL=2 bash scripts/build.sh
@@ -57,106 +58,6 @@ CMAKE_BUILD_TYPE=RelWithDebInfo bash scripts/build.sh
 
 A clean source build was checked; a fresh operating-system installation was not.
 For headless operation, set `system.with_ui: false` in the selected configuration.
-
-</details>
-
-### 1.2 Transfer and build on an offline M20 Pro
-
-On your computer, run from the repository root. Set `AOS` to `10.21.41.1` when
-using the additional network adapter; the usual address is `10.21.33.103`:
-
-```bash
-export AOS=10.21.33.103
-git archive --format=tar.gz --output=/tmp/lightning-source.tar.gz HEAD
-scp /tmp/lightning-source.tar.gz "user@$AOS:~/"
-ssh "user@$AOS"
-```
-
-On AOS, extract into a new deployment directory and check the dependencies:
-
-```bash
-mkdir -p ~/lightning-lm
-tar -xzf ~/lightning-source.tar.gz --touch -C ~/lightning-lm
-cd ~/lightning-lm
-source /opt/ros/foxy/setup.bash
-bash scripts/install_dep.sh --check
-```
-
-If dependencies are missing, complete the package-transfer steps below before
-building. The dependency check does not access the internet.
-
-<details>
-<summary>1.2.1 Transfer missing dependency packages</summary>
-
-On AOS, generate a download list using its installed packages and APT indexes:
-
-```bash
-bash scripts/install_dep.sh --download-uris > ~/lightning-dependencies.uris
-```
-
-On your internet-connected computer, keep `AOS` set to the selected address.
-Copy the list, download the requested packages, then transfer them to AOS:
-
-```bash
-scp "user@$AOS:~/lightning-dependencies.uris" /tmp/lightning-dependencies.uris
-mkdir -p /tmp/lightning-debs
-(
-  set -e
-  while read -r uri filename rest; do
-    wget -O "/tmp/lightning-debs/$filename" "${uri:1:-1}"
-  done < /tmp/lightning-dependencies.uris
-)
-scp -r /tmp/lightning-debs "user@$AOS:~/"
-```
-
-Wait for all downloads to succeed before transferring. On AOS, install from
-the transferred packages with network downloads disabled:
-
-```bash
-bash scripts/install_dep.sh --offline "$HOME/lightning-debs"
-bash scripts/install_dep.sh --check
-```
-
-Generate the list on AOS so it selects Ubuntu 20.04 ARM64/Foxy packages and their
-missing dependencies. The downloading computer may use x86 Ubuntu 20.04 or 22.04;
-it downloads the exact requested files without installing them. An empty list
-means the required packages are already installed.
-
-This uses the robot's existing, trusted APT package indexes. If APT cannot locate
-a package or a requested version is no longer available, refresh those indexes
-through an offline APT workflow before generating a new list. See
-[Ubuntu's apt-offline guide](https://manpages.ubuntu.com/manpages/focal/man8/apt-offline.8.html).
-The offline install fails if required packages are missing from the transfer.
-
-</details>
-
-Build and install locally on AOS:
-
-```bash
-CMAKE_BUILD_PARALLEL_LEVEL=2 bash scripts/build.sh
-source scripts/setup.bash
-ros2 pkg executables lightning
-ros2 interface show lightning/srv/SaveMap
-ros2 interface show livox_ros_driver2/msg/CustomMsg
-```
-
-Continue with [sensor preparation](#51-m20-pro),
-[onboard mapping](#6-onboard-mapping), and
-[onboard localization](#7-onboard-localization).
-
-<details>
-<summary>1.2.2 Archive contents and build output</summary>
-
-The archive contains the checked-out commit, including the Pangolin source ZIP,
-Sophus, Miao, and Livox message definitions. Commit local source changes before
-creating it. Build and install directories from your computer are excluded;
-AOS compiles native ARM binaries from the transferred sources.
-
-The build script requires no downloads. It builds Pangolin into `.deps` and
-installs Lightning-LM into `install` in this deployment directory. Keep these
-directories for incremental builds. The `--touch` extraction option gives the
-new source files AOS's current modification time; preserve the robot's sensor
-clock synchronization.
 
 </details>
 
@@ -243,7 +144,7 @@ ros2 service call /lightning/save_map lightning/srv/SaveMap "{map_id: online_map
 Wait for `response: 0`, then press **Ctrl+C** in the mapping terminal. The map is
 saved to `data/online_map/` relative to that terminal's working directory.
 Choose a new `map_id` for each run. Online mapping requires this explicit save.
-For live sensor input, follow [onboard mapping](#6-onboard-mapping).
+For live sensor input, follow [onboard mapping](#7-onboard-mapping).
 
 <details>
 <summary>3.3 Map files and viewer controls</summary>
@@ -302,7 +203,7 @@ ros2 run lightning run_loc_online \
 Replay the bag from another sourced terminal using the
 command in section 3.2. The viewer shows the reference map, scan, and trajectory.
 Press **Ctrl+C** after playback to close the viewer and flush the trajectory.
-For live sensor input, follow [onboard localization](#7-onboard-localization).
+For live sensor input, follow [onboard localization](#8-onboard-localization).
 
 <details>
 <summary>4.3 Initialization and pose output</summary>
@@ -323,9 +224,101 @@ names, extrinsics, and the saved map must match the selected sensor setup.
 
 </details>
 
-## 5. Connect the sensor drivers
+## 5. Deploy from a laptop to the robot
 
-### 5.1 M20 Pro
+Download the repository on your laptop, transfer the sources to AOS, and compile
+and install there. This uses the standard M20 Pro AOS environment with
+Ubuntu 20.04 / Foxy; AOS does not need an external internet connection.
+
+### 5.1 Laptop: download and transfer the sources
+
+Download this repository using **Code → Download ZIP** and extract it on your
+laptop, or use your existing Git checkout. Open a Bash terminal in its root
+and create a source archive:
+
+```bash
+tar -czf /tmp/lightning-source.tar.gz \
+  CMakeLists.txt package.xml cmake config scripts src srv \
+  thirdparty/Pangolin-0.9.3.zip thirdparty/Sophus thirdparty/livox_ros_driver \
+  README.md AGENTS.md LICENSE.txt doc
+```
+
+Connect the laptop to the robot network. Set `AOS` to the robot's address and
+transfer the archive:
+
+```bash
+export AOS=10.21.33.103
+scp /tmp/lightning-source.tar.gz "user@$AOS:~/"
+ssh "user@$AOS"
+```
+
+When using the additional network adapter, use `export AOS=10.21.41.1` instead.
+
+### 5.2 AOS: compile and install Lightning-LM
+
+In the SSH terminal, extract into a new deployment directory and build:
+
+```bash
+mkdir -p ~/lightning-lm
+tar -xzf ~/lightning-source.tar.gz --touch -C ~/lightning-lm
+cd ~/lightning-lm
+source /opt/ros/foxy/setup.bash
+bash scripts/build_robot.sh
+source scripts/setup.bash
+ros2 pkg executables lightning
+ros2 interface show lightning/srv/SaveMap
+ros2 interface show livox_ros_driver2/msg/CustomMsg
+```
+
+The script checks the installed dependencies, compiles the bundled Pangolin and
+Lightning-LM sources, and installs them in this deployment directory. It selects
+up to four compiler jobs according to available RAM.
+
+Continue with [sensor preparation](#61-m20-pro),
+[onboard mapping](#7-onboard-mapping), and
+[onboard localization](#8-onboard-localization).
+
+<details>
+<summary>5.3 Build settings and subsequent code updates</summary>
+
+On RK3588, the robot build script distributes compiler jobs across the four A76
+cores and runs compilation at reduced scheduling priority. It reduces the default
+job count when less RAM is available. This is an initial memory estimate; other
+software can still consume RAM during the build. Runtime threading is configured
+separately.
+
+To check dependencies and see the selected settings without building:
+
+```bash
+bash scripts/build_robot.sh --check
+```
+
+Keep `build`, `build-pangolin`, `.deps`, and `install` for subsequent builds.
+After transferring changed sources, rebuild from the same AOS directory:
+
+```bash
+bash scripts/build_robot.sh
+source scripts/setup.bash
+```
+
+Unchanged files are skipped. If `ccache` is installed, it also reuses previous
+compilations when their inputs match. To request fewer jobs:
+
+```bash
+CMAKE_BUILD_PARALLEL_LEVEL=2 bash scripts/build_robot.sh
+```
+
+The source archive works with a downloaded ZIP or Git checkout and includes
+local source edits and all bundled source dependencies. Laptop build products
+are excluded; AOS produces native ARM binaries. The `--touch` extraction option
+gives transferred source files AOS's current modification time. Preserve the
+robot's sensor clock synchronization and existing build-product timestamps.
+
+</details>
+
+## 6. Connect the sensor drivers
+
+### 6.1 M20 Pro
 
 On the NOS host, start the point-cloud relay:
 
@@ -348,7 +341,8 @@ through that address instead:
 ssh user@10.21.41.1
 ```
 
-Change to the repository directory built in section 1, then prepare a root shell:
+Complete [onboard deployment](#5-deploy-from-a-laptop-to-the-robot), then change
+to that repository directory on AOS and prepare a root shell:
 
 ```bash
 sudo -s
@@ -375,12 +369,12 @@ ros2 topic hz /IMU
 ```
 
 Keep the firmware sensor publishers running. Continue with
-[onboard mapping](#6-onboard-mapping) or
-[onboard localization](#7-onboard-localization).
+[onboard mapping](#7-onboard-mapping) or
+[onboard localization](#8-onboard-localization).
 Repeat the root-shell setup in every AOS application or service terminal.
 
 <details>
-<summary>5.1.1 Relay and runtime configuration</summary>
+<summary>6.1.1 Relay and runtime configuration</summary>
 
 To start the relay automatically after reboot, run
 `sudo systemctl enable multicast-relay.service` on NOS.
@@ -392,7 +386,7 @@ up live inputs.
 
 </details>
 
-### 5.2 Mid360
+### 6.2 Mid360
 
 Start the hardware driver from its own workspace. This repository includes Livox
 message definitions; install and launch the full Mid360 driver separately.
@@ -408,7 +402,7 @@ Keep the driver's existing reliability setting. Lightning-LM uses **best-effort*
 subscriptions and accepts either best-effort or reliable sensor publishers.
 
 <details>
-<summary>5.3 Best-effort DDS and the larger shared-memory buffer</summary>
+<summary>6.3 Best-effort DDS and the larger shared-memory buffer</summary>
 
 Best effort avoids waiting for retransmission of missing samples. Adequate
 processing capacity and buffering still matter; delivery is not guaranteed.
@@ -438,13 +432,13 @@ CPU overload.
 
 </details>
 
-## 6. Onboard mapping
+## 7. Onboard mapping
 
-Complete [M20 Pro preparation](#51-m20-pro), then run these commands from the
+Complete [M20 Pro preparation](#61-m20-pro), then run these commands from the
 repository root on AOS. Keep the robot standing during initialization and leave
 the sensor publishers running.
 
-### 6.1 Start mapping
+### 7.1 Start mapping
 
 In the prepared root shell:
 
@@ -453,9 +447,9 @@ export CONFIG="$PWD/data/m20_pro_headless.yaml"
 ros2 run lightning run_slam_online --config "$CONFIG"
 ```
 
-### 6.2 Save the map
+### 7.2 Save the map
 
-In a second AOS terminal, repeat the root-shell setup in section 5.1, then save
+In a second AOS terminal, repeat the root-shell setup in section 6.1, then save
 to a new map directory:
 
 ```bash
@@ -467,7 +461,7 @@ The map is saved to `data/onboard_map/` relative to the mapping terminal's
 repository root. Choose a new `map_id` for each mapping run.
 
 <details>
-<summary>6.3 Live input and saved maps</summary>
+<summary>7.3 Live input and saved maps</summary>
 
 Onboard mapping uses the same `run_slam_online` application and M20 sensor
 settings as online dataset playback. The robot's firmware supplies LiDAR and IMU
@@ -480,7 +474,7 @@ can be viewed on a computer with an OpenGL desktop.
 
 </details>
 
-### 6.4 View the saved map
+### 7.4 View the saved map
 
 On a computer with a display, copy the complete map directory into
 `data/onboard_map/` if needed, then open the saved cloud:
@@ -489,14 +483,14 @@ On a computer with a display, copy the complete map directory into
 pcl_viewer data/onboard_map/global.pcd -ps 2
 ```
 
-## 7. Onboard localization
+## 8. Onboard localization
 
-Stop mapping first. Complete [M20 Pro preparation](#51-m20-pro) in the
+Stop mapping first. Complete [M20 Pro preparation](#61-m20-pro) in the
 localization terminal and run from the repository root on AOS.
 
-### 7.1 Load the map and start localization
+### 8.1 Load the map and start localization
 
-Use the map saved in section 6, or set `MAP` to an existing complete map directory:
+Use the map saved in section 7, or set `MAP` to an existing complete map directory:
 
 ```bash
 export CONFIG="$PWD/data/m20_pro_headless.yaml"
@@ -507,9 +501,9 @@ ros2 run lightning run_loc_online \
   -- --ros-args -r /tf:=/lightning/tf -r /initialpose:=/lightning/initialpose
 ```
 
-### 7.2 Check the pose and stop
+### 8.2 Check the pose and stop
 
-In another AOS terminal, repeat the root-shell setup in section 5.1 and check the
+In another AOS terminal, repeat the root-shell setup in section 6.1 and check the
 pose and transform topics. Stop each check with **Ctrl+C** before running the next:
 
 ```bash
@@ -521,7 +515,7 @@ Press **Ctrl+C** in the localization terminal when finished. Valid localization
 poses are written to `localization_onboard.tum`; the reference map is preserved.
 
 <details>
-<summary>7.3 Initialization, dataset maps, and pose output</summary>
+<summary>8.3 Initialization, dataset maps, and pose output</summary>
 
 Onboard localization uses the same `run_loc_online` application and sensor
 settings as online dataset playback. Maps from recorded data and live mapping
@@ -542,10 +536,10 @@ matches. An existing trajectory file at the selected path is replaced.
 
 </details>
 
-## 8. Results and onboard resources
+## 9. Results and onboard resources
 
 <details>
-<summary>8.1 Seven-dataset reconstruction and localization results</summary>
+<summary>9.1 Seven-dataset reconstruction and localization results</summary>
 
 All seven recordings passed offline/online mapping and offline/online localization
 checks on Ubuntu 22.04 / Humble, with the viewer enabled and online playback at 1×.
@@ -571,7 +565,7 @@ See [validation details and recording paths](doc/validation.md) for the evidence
 </details>
 
 <details>
-<summary>8.2 RK3588 and the 16 GB memory budget</summary>
+<summary>9.2 RK3588 and the 16 GB memory budget</summary>
 
 The largest measured application memory footprint was **1.26 GiB**, or **1.41 GiB**
 including bag playback, on the x86 workstation with visualization enabled.
@@ -586,14 +580,14 @@ four-worker limit; OpenMP defaults to passive waiting. Sensor queues are bounded
 and localization unloads distant map tiles. Mapping memory grows with route length
 because loop closure retains keyframes.
 
-Start onboard builds with two jobs and validation at normal sensor rate. Disable
+Use `scripts/build_robot.sh` for onboard builds and validate at normal sensor rate. Disable
 `system.with_ui` for headless operation. If map matching cannot keep up, lower
 `lidar_loc.max_frequency` and recheck tracking. See
 [resource and implementation details](doc/implementation.md).
 
 </details>
 
-## 9. Maintenance and license
+## 10. Maintenance and license
 
 Contributor guidance lives in [AGENTS.md](AGENTS.md), with detailed
 [implementation](doc/implementation.md) and [validation](doc/validation.md) notes.

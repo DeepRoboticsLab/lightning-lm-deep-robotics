@@ -30,6 +30,11 @@ packages=(
 )
 missing=()
 for package in "${packages[@]}"; do
+    # Compiler caching is optional on the standard robot image. Online installs
+    # and explicit offline package requests still include it for faster rebuilds.
+    if [[ $mode == --check && $package == ccache ]]; then
+        continue
+    fi
     if [[ $(dpkg-query -W -f='${Status}' "$package" 2>/dev/null || true) != 'install ok installed' ]]; then
         missing+=("$package")
     fi
@@ -58,5 +63,5 @@ if ((${#missing[@]})); then
             ;;
     esac
 else
-    echo "All build and ROS dependencies are installed." >&2
+    echo "All required build and ROS dependencies are installed." >&2
 fi

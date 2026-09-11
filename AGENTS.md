@@ -35,8 +35,8 @@ comparisons and record which binary/configuration actually ran.
 
 Production entry points are the four `src/app/run_{slam,loc}_{offline,online}.cc`
 programs. The supported scripts are `scripts/install_dep.sh`, `scripts/build.sh`,
-and `scripts/setup.bash`. Keep experimental runners, screenshot/render scripts,
-profiling helpers, temporary test programs, and unrelated configs out of the
+`scripts/build_robot.sh`, and `scripts/setup.bash`. Keep experimental runners,
+screenshot/render scripts, profiling helpers, temporary test programs, and unrelated configs out of the
 published tree. Keep new investigation reports, verification records, images,
 logs, maps, and binaries in ignored `outputs/` or external directories, and
 report results to the user. Do not add session-specific validation artifacts to
@@ -65,9 +65,10 @@ ros2 interface show livox_ros_driver2/msg/CustomMsg
 ```
 
 Use all workstation CPUs unless the user specifies otherwise. On the 16 GB
-RK3588 target start with `CMAKE_BUILD_PARALLEL_LEVEL=2`. This is a build-memory
-choice; runtime threading is controlled separately. Do not enable x86 flags on
-ARM or make `-march=native` a portable binary default.
+RK3588 target use `scripts/build_robot.sh`: it selects up to four compiler jobs,
+reducing this according to currently available RAM. Runtime threading is
+controlled separately. Do not enable x86 flags on ARM or make `-march=native`
+a portable binary default.
 
 For build comparisons, use the same job count and reduce it when measured compiler
 memory would exceed available RAM. Report fresh builds, incremental builds, and
@@ -81,6 +82,47 @@ core. Check actual CPU placement when reporting onboard build performance;
 `CMAKE_BUILD_PARALLEL_LEVEL=2` means two jobs, not necessarily two occupied cores.
 Preserve firmware real-time scheduling and sensor/control services.
 
+The robot wrapper delegates dependency handling to `install_dep.sh` and compilation
+to `build.sh`. Its default and `--check` modes never install/download packages;
+`--offline DIRECTORY` installs only transferred packages before building. Keep the
+laptop source transfer and AOS compilation visible in their own README
+section, including downloaded ZIPs without Git metadata. The public workflow uses
+the standard AOS dependencies; do not add a separate dependency-download tutorial.
+Audit the target first and bundle any actually missing packages with the sources
+for a deployment that needs them. The source archive must
+contain the bundled Pangolin ZIP, Sophus, Miao, and message/service definitions,
+and exclude laptop build products.
+
+`build_robot.sh` detects RK3588 through device-tree compatibility and leases CPUs
+4–7 to individual compiler children with `flock`/`taskset` for both Pangolin and
+Lightning. Keep both phases on these four A76 cores; the user explicitly declined
+using the smaller A55 cores for additional jobs.
+Prefer A76 cores in order 7, 6, 4, 5 for the standard firmware's control/sensor
+placement, so trailing compiler jobs use the less occupied cores first.
+Other Linux systems use their inherited CPU affinity. `ROBOT_BUILD_CPUS` can explicitly select CPUs;
+validate each requested CPU before building. Never change firmware isolation,
+governors, real-time priorities, or service affinity. Build children use nice +10.
+Preserve explicit C/C++ launchers, including an empty cache launcher, behind the
+affinity wrapper. Keep lock files in ignored `build-robot-locks`; CMake may invoke
+the recorded launcher again after the wrapper exits. Forward compiler failures.
+
+The initial memory budget reserves 2 GiB of `MemAvailable` and allows 2.75 GiB
+per Release compiler (4.5 GiB for other build types with debug symbols).
+Default to at most four jobs; reject an explicit job count above
+the memory/CPU allowance. This is not a runtime RAM cap: changing compiler flags,
+future translation units, or other running software can increase demand.
+Measure both aggregate process-tree RSS (shared pages may count twice) and minimum
+system `MemAvailable` when changing the budget. A single child's maximum RSS is
+not total build memory. Compare cache-disabled fresh builds with identical
+sources/options and verify actual compiler placement on isolated cores.
+Extract Pangolin with `unzip -DD -nq`: use local timestamps for newly extracted
+files and leave existing files alone. Future archive timestamps otherwise trigger
+recompilation under a robot's synchronized clock. Never fix this by touching
+existing build products or changing the robot's clock synchronization.
+Future-dated system shared libraries can still trigger relinking even when no
+C/C++ source recompiles. Diagnose those dependencies separately; do not change
+system-library timestamps or disable dependency tracking to improve a benchmark.
+
 C++ Release builds retain `-O2` and enabled assertions; do not silently replace
 them with CMake's `-O3 -DNDEBUG` defaults. Debug symbols are selected through
 `CMAKE_BUILD_TYPE=RelWithDebInfo` or `Debug`, including when using `scripts/build.sh`.
@@ -89,9 +131,11 @@ The script detects ccache for both Pangolin and Lightning-LM, respects explicit
 and clears stale launchers when no cache is available. Keep normal cache validity
 checks enabled.
 
-For offline deployments, archive the selected commit with all tracked vendored
-sources; do not transfer x86 build products to ARM. `install_dep.sh --check` only
-reports missing packages. `--download-uris` resolves their dependency downloads
+For offline deployments, archive the selected sources with all required vendored
+files; do not transfer x86 build products to ARM. `install_dep.sh --check` only
+reports missing required packages; ccache is optional for this check because
+`build.sh` can compile without it. Online installation and explicit offline
+package requests still include ccache. `--download-uris` resolves dependency downloads
 against the target's installed state and trusted APT indexes, using an empty
 cache so already-cached packages are included in the request. Run it on AOS,
 then download those exact URIs on the connected computer with APT's requested
@@ -190,6 +234,11 @@ cross-host UDP and new physical-driver deployments still require validation.
   publishes `map` to `base_link` on `/tf`. For independent Lightning-LM use,
   remap its TF and initial-pose topics as shown in the README. Gflags requires
   the `--` separator before `--ros-args`; verify resolved endpoints.
+- Record application CPU affinity separately from build parallelism. An AOS root
+  SSH shell can inherit only CPUs 0–3 (A55). An explicit A76 application launch
+  can help diagnose sensor backlog, but compiler placement is not a runtime
+  performance qualification. Preserve failed queue-overflow trials and check
+  normal-rate delivery when testing application affinity.
 - AOS may be synchronized by `ptp4l`/`phc2sys`. A manually set wall clock can be
   immediately replaced by the robot's clock source. Do not disable sensor
   synchronization to remove build timestamp warnings. Normalize timestamps only

@@ -176,8 +176,8 @@ thread count. Passive OpenMP waiting reduces idle worker contention. See
 
 The x86 tests used software OpenGL; display-server memory and graphics-thread
 cost are not included in application RSS. Start native RK3588 validation with
-two build jobs, normal sensor rate, and a representative long route. Disable the
-viewer for headless operation. Lower map-match frequency if necessary, then check
+`scripts/build_robot.sh`, normal sensor rate, and a representative long route.
+Disable the viewer for headless operation. Lower map-match frequency if necessary, then check
 tracking quality. Changing sampling/voxels requires reconstruction regression
 checks. Increasing queues cannot fix sustained compute overload.
 

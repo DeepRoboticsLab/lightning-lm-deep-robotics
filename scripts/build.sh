@@ -16,7 +16,9 @@ launcher_args=(
     "-DCMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER-$compiler_cache}"
     "-DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER-$compiler_cache}"
 )
-unzip -nq thirdparty/Pangolin-0.9.3.zip -d thirdparty
+# Keep existing sources; timestamp newly extracted files with the local clock.
+# Robot sensor clocks can precede the ZIP's timestamps and otherwise force rebuilds.
+unzip -DD -nq thirdparty/Pangolin-0.9.3.zip -d thirdparty
 cmake -S thirdparty/Pangolin-0.9.3 -B build-pangolin \
     -DCMAKE_BUILD_TYPE="$build_type" -DCMAKE_INSTALL_PREFIX="$repo_dir/.deps" \
     -DBUILD_EXAMPLES=OFF -DBUILD_TOOLS=OFF -DBUILD_PANGOLIN_PYTHON=OFF \
