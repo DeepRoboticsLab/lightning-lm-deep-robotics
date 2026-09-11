@@ -1,7 +1,6 @@
 #include <pcl/common/transforms.h>
 #include <yaml-cpp/yaml.h>
 #include <fstream>
-#include "utils/reconstruction_diagnostics.h"
 
 #include "common/options.h"
 #include "core/lightning_math.hpp"
@@ -90,13 +89,13 @@ bool LaserMapping::LoadParamsFromYAML(const std::string &yaml_file) {
     LOG(INFO) << "lidar_type " << lidar_type;
     if (lidar_type == 1) {
         preprocess_->SetLidarType(LidarType::AVIA);
-        LOG(INFO) << "Using AVIA Lidar";
+        LOG(INFO) << "Using Livox LiDAR";
     } else if (lidar_type == 2) {
         preprocess_->SetLidarType(LidarType::VELO32);
         LOG(INFO) << "Using Velodyne 32 Lidar";
     } else if (lidar_type == 3) {
-        preprocess_->SetLidarType(LidarType::OUST64);
-        LOG(INFO) << "Using OUST 64 Lidar";
+        preprocess_->SetLidarType(LidarType::ROBOSENSE);
+        LOG(INFO) << "Using RoboSense LiDAR";
     } else {
         LOG(WARNING) << "unknown lidar_type";
         return false;
@@ -126,14 +125,6 @@ bool LaserMapping::LoadParamsFromYAML(const std::string &yaml_file) {
     p_imu_->SetGyrBiasCov(Vec3d(b_gyr_cov, b_gyr_cov, b_gyr_cov));
     p_imu_->SetAccBiasCov(Vec3d(b_acc_cov, b_acc_cov, b_acc_cov));
 
-    const auto diagnostic_path = diagnostics::Directory(yaml_file);
-    if (!diagnostic_path.empty()) {
-        std::ofstream effective(diagnostic_path + "/frontend-effective.txt");
-        effective << std::setprecision(17) << "kf_dis_th=" << options_.kf_dis_th_ << "\nkf_angle_th_rad=" << options_.kf_angle_th_
-            << "\nimu_filter=" << p_imu_->UseIMUFilter()
-            << "\nmotion_model=" << (kf_.ConstantVelocity() ? "constant_velocity" : "inertial")
-            << "\nuse_aa=" << use_aa_ << "\nskip_lidar=" << skip_lidar_num_ << "\nextrinsic_est_en=" << extrinsic_est_en_ << '\n';
-    }
     return true;
 }
 
@@ -168,11 +159,15 @@ void LaserMapping::ProcessIMU(const lightning::IMUPtr &imu) {
     last_timestamp_imu_ = timestamp;
 
     imu_buffer_.emplace_back(imu);
+    if (imu_buffer_.size() > 2000) {
+        imu_buffer_.pop_front();
+        LOG_EVERY_N(ERROR, 200) << "IMU synchronization queue overflow: check LiDAR input and timestamps";
+    }
 }
 
-bool LaserMapping::Run() {
+bool LaserMapping::Run(bool quiet_sync) {
     if (!SyncPackages()) {
-        LOG(WARNING) << "sync package failed";
+        if (!quiet_sync) LOG(WARNING) << "sync package failed";
         return false;
     }
 
@@ -378,8 +373,8 @@ void LaserMapping::ProcessPointCloud2(const livox_ros_driver2::msg::CustomMsg::S
             scan_count_++;
             double timestamp = ToSec(msg->header.stamp);
             if (timestamp < last_timestamp_lidar_) {
-                LOG(ERROR) << "lidar loop back, clear buffer";
-                lidar_buffer_.clear();
+                LOG(WARNING) << "Discard out-of-order LiDAR scan, dt: " << timestamp - last_timestamp_lidar_;
+                return;
             }
 
             // LOG(INFO) << "get cloud at " << std::setprecision(14) << timestamp
@@ -403,8 +398,10 @@ void LaserMapping::ProcessPointCloud2(CloudPtr cloud) {
 
             double timestamp = math::ToSec(cloud->header.stamp);
             if (timestamp < last_timestamp_lidar_) {
-                LOG(ERROR) << "lidar loop back, clear buffer";
-                lidar_buffer_.clear();
+                // Match the raw PointCloud2 path: retaining an older scan can
+                // integrate backwards and separate clouds from their time queue.
+                LOG(WARNING) << "Discard out-of-order LiDAR scan, dt: " << timestamp - last_timestamp_lidar_;
+                return;
             }
 
             lidar_buffer_.push_back(cloud);
@@ -415,6 +412,13 @@ void LaserMapping::ProcessPointCloud2(CloudPtr cloud) {
 }
 
 bool LaserMapping::SyncPackages() {
+    // A missing/late IMU stream must not retain clouds indefinitely.
+    while (lidar_buffer_.size() > 32) {
+        lidar_buffer_.pop_front();
+        time_buffer_.pop_front();
+        lidar_pushed_ = false;
+        LOG(ERROR) << "LiDAR synchronization queue overflow: check IMU input and timestamps";
+    }
     if (lidar_buffer_.empty() || imu_buffer_.empty()) {
         return false;
     }

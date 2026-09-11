@@ -48,27 +48,30 @@ void UiCloud::SetCloud(CloudPtr cloud, const SE3& pose) {
 }
 
 void UiCloud::Render() {
-    // glPointSize(2.0);
-
-    glBegin(GL_POINTS);
-
-    for (int i = 0; i < xyz_data_.size(); ++i) {
-        if (use_color_ == UseColor::PCL_COLOR) {
-            glColor4f(color_data_pcl_[i][0], color_data_pcl_[i][1], color_data_pcl_[i][2], ui::opacity);
-        } else if (use_color_ == UseColor::INTENSITY_COLOR) {
-            glColor4f(color_data_intensity_[i][0], color_data_intensity_[i][1], color_data_intensity_[i][2],
-                      ui::opacity);
-        } else if (use_color_ == UseColor::HEIGHT_COLOR) {
-            glColor4f(color_data_height_[i][0], color_data_height_[i][1], color_data_height_[i][2], ui::opacity);
-        } else if (use_color_ == UseColor::GRAY_COLOR) {
-            glColor4f(color_data_gray_[i][0], color_data_gray_[i][1], color_data_gray_[i][2], ui::opacity);
-        } else if (use_color_ = UseColor::CUSTOM_COLOR) {
-            glColor4f(custom_color_[0], custom_color_[1], custom_color_[2], ui::opacity);
+    if (xyz_data_.empty()) return;
+    if (rendered_opacity_ != ui::opacity) {
+        for (auto* colors : {&color_data_pcl_, &color_data_intensity_, &color_data_height_, &color_data_gray_}) {
+            for (auto& color : *colors) color[3] = ui::opacity;
         }
-
-        glVertex3f(xyz_data_[i][0], xyz_data_[i][1], xyz_data_[i][2]);
+        rendered_opacity_ = ui::opacity;
     }
-    glEnd();
+    const std::vector<Vec4f>* colors = nullptr;
+    switch (use_color_) {
+        case PCL_COLOR: colors = &color_data_pcl_; break;
+        case INTENSITY_COLOR: colors = &color_data_intensity_; break;
+        case HEIGHT_COLOR: colors = &color_data_height_; break;
+        case GRAY_COLOR: colors = &color_data_gray_; break;
+        case CUSTOM_COLOR: glColor4f(custom_color_[0], custom_color_[1], custom_color_[2], ui::opacity); break;
+    }
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glVertexPointer(3, GL_FLOAT, sizeof(Vec3f), xyz_data_.data());
+    if (colors) {
+        glEnableClientState(GL_COLOR_ARRAY);
+        glColorPointer(4, GL_FLOAT, sizeof(Vec4f), colors->data());
+    }
+    glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(xyz_data_.size()));
+    if (colors) glDisableClientState(GL_COLOR_ARRAY);
+    glDisableClientState(GL_VERTEX_ARRAY);
 }
 
 void UiCloud::BuildIntensityTable() {

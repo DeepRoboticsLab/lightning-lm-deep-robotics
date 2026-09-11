@@ -41,6 +41,8 @@ class LidarLoc {
         bool with_height_ = true;                      // 建图期间是否带有高度约束？
         bool force_2d_ = true;                         // 强制在2D空间
         float min_init_confidence_ = 0.1;              // 初始化时要求的最小分值
+        float min_tracking_confidence_ = 1.0;          // Reject unsupported scan-to-map matches.
+        float scan_voxel_size_ = 0.5;
         bool init_with_fp_ = true;                     // 是否使用功能点进行初始化
         bool enable_parking_static_ = false;           // 是否在静止时输出固定位置
         bool enable_icp_adjust_ = false;               // 是否使用icp调整ndt匹配结果提高定位精度
@@ -75,7 +77,7 @@ class LidarLoc {
     bool ProcessLO(const NavState& state);
 
     /// 处理拼接后点云
-    bool ProcessCloud(CloudPtr cloud_input);
+    bool ProcessCloud(CloudPtr cloud_input, double scan_end_time);
 
     /// 处理DR状态
     bool ProcessDR(const NavState& state);
@@ -140,7 +142,7 @@ class LidarLoc {
      * 对点云进行配准
      * @param input
      */
-    void Align(const CloudPtr& input);
+    void Align(const CloudPtr& input, double scan_end_time);
 
     /**
      * 寻找当前帧对应的LO相对位姿
@@ -172,7 +174,7 @@ class LidarLoc {
     /**
      * 更新地图
      */
-    void UpdateMapThread();
+    void RefreshMap(bool force = false);
 
     /**
      * 使用网格搜索best yaw
@@ -201,6 +203,7 @@ class LidarLoc {
     bool initial_pose_set_ = false;  // 定位是否被手动设置
     SE3 initial_pose_;               // 手动设置的初始位姿
     bool loc_inited_ = false;        // 定位是否初始化成功
+    double last_yaw_search_time_ = -1;
 
     double current_timestamp_ = 0;  // 本次输入的时间戳
     double last_timestamp_ = 0;     // 上次输入的时间戳
@@ -255,8 +258,6 @@ class LidarLoc {
     std::vector<SE3> fp_init_fail_pose_vec_;
     double fp_last_tried_time_ = 0;
 
-    bool update_map_quit_ = false;
-    std::thread update_map_thread_;            // 地图更新
     std::shared_ptr<TiledMap> map_ = nullptr;  // 地图
     double map_height_ = 0;
 

@@ -1,661 +1,319 @@
-# Lightning-LM Deployment Guide for Deep Robotics M20
+# Lightning-LM
 
-![Offline reconstruction results for all seven local M20 and Lite3 datasets](doc/images/seven-datasets-overview.png)
+![Seven 3D reconstructions](doc/images/seven-datasets-overview.png)
 
-Seven full offline replays using one executable and two shared presets: M20 and
-Lite3 / Mid360, with the height prior disabled. See
-[results, configurations and replay instructions](doc/seven-datasets.md).
+3D LiDAR mapping and localization for **Deep Robotics M20 Pro** and **Livox Mid360**.
+Build maps with loop closure, view reconstruction live, and localize against saved
+point clouds. Both sensor presets use the same four online and offline applications.
 
-This guide describes how to build Lightning-LM with ROS 2 Foxy or Humble and deploy it on the Deep Robotics M20 platform equipped with a RoboSense LiDAR. The robot-specific instructions use Foxy; the desktop build instructions also cover Humble.
+## 1. Install and build
 
-Tutorial videos:
-
-* [YouTube](https://youtu.be/1S8X03tm3-8?si=aPQY8Id6GBd-21Uc)
-* [Bilibili](https://www.bilibili.com/video/BV12YQZBqE1b/?share_source=copy_web&vd_source=57f46145c37bfb96f7583c9e02081590)
-
-## Update Notes
-
-This branch retains the March 18 M20 reconstruction path and adds configurable
-Mid360 gyro filtering, constant-velocity prediction and keyframe spacing. Both
-sensor families use the same compiled implementation. The linked replay guide
-documents the comparison with `shengxian886`, the saved results and remaining
-Library F revisit-alignment limitation. Desktop replay times do not establish
-real-time performance on the robot.
-
-## 1. Dataset and Hardware Preparation
-
-Before deploying Lightning-LM on the physical robot, it is strongly recommended to obtain the source code and first test the algorithm using the provided datasets.
-
-### Clone the Repository
-
-Clone the Deep Robotics-specific version of Lightning-LM:
+Supports **Ubuntu 20.04 / ROS 2 Foxy** and **Ubuntu 22.04 / ROS 2 Humble**.
+Use an OpenGL desktop for visualization.
+Run these commands from the repository root in a fresh Bash terminal:
 
 ```bash
-git clone https://github.com/DeepRoboticsLab/lightning-lm-deep-robotics.git
-```
-
-### M20 Dataset
-
-Download the test dataset collected using the M20 robot:
-
-* **Google Drive:** [M20 Robot Dataset](https://drive.google.com/drive/folders/19T__ai6u5WCTwyWi3L4KC9gVZI-jiQM-?usp=drive_link)
-
-* **Note:** The dataset contains `lidar_data_bag`, which is used in the examples below.
-
-A larger and more challenging dataset is also provided. This dataset was recorded while the M20 robot was moving near the Main Library of Zhejiang University:
-
-[Dataset Download](https://drive.google.com/drive/folders/1dAoFarl1nb6sMvoKAEhMDwgeG8ujeo_f?usp=drive_link)
-
-The Lite3 LiDAR dataset can be downloaded here:
-
-[Lite3 LiDAR Dataset](https://drive.google.com/drive/folders/12alT4TuZwYC_xWUrex2quWOoMKXzpbQ2?usp=drive_link)
-
-The following configuration file can be used to test the algorithm:
-
-```text
-lightning-lm-deep-robotics/config/lite3_livox_3d.yaml
-```
-
-The dataset also contains videos recorded while the robot was collecting LiDAR data.
-
-### M20 Hardware Configuration
-
-For configuration and usage instructions for the RoboSense LiDAR installed on the M20 robot, refer to the official documentation:
-
-* **LiDAR User Guide:** [Deep Robotics M20 LiDAR Docs](https://alidocs.dingtalk.com/i/p/OlnXRl7ed542DGLp/docs/qnYMoO1rWxDL7r6LHbad2kA9W47Z3je9)
-
-## 2. Build Instructions
-
-### Step 1: Install APT Dependencies
-
-Use ROS 2 Foxy on Ubuntu 20.04 or ROS 2 Humble on Ubuntu 22.04. Install ROS 2 first, then source **one** distribution in a fresh Bash terminal:
-
-```bash
-source /opt/ros/humble/setup.bash  # Ubuntu 22.04
-# For Ubuntu 20.04 instead: source /opt/ros/foxy/setup.bash
-
-cd /path/to/lightning-lm-deep-robotics
+source /opt/ros/humble/setup.bash
 bash scripts/install_dep.sh
+bash scripts/build.sh
+source scripts/setup.bash
 ```
 
-The script uses `ROS_DISTRO` to install `ros-${ROS_DISTRO}-pcl-conversions`,
-`ros-${ROS_DISTRO}-rosbag2`, `ros-${ROS_DISTRO}-ament-cmake-auto`, and
-`ros-${ROS_DISTRO}-rosidl-default-generators`, along with the C++ and Pangolin
-dependencies. It includes `libtbb-dev` for the TBB library linked by Lightning-LM
-and `python3-colcon-common-extensions` for the build tools.
+On Ubuntu 20.04, use `source /opt/ros/foxy/setup.bash` in the first line.
+Run `source scripts/setup.bash` from the repository root in every new application
+or bag-playback terminal.
 
-If APT reports `Unable to locate package ros-foxy-pcl-conversions` on Ubuntu
-22.04, source Humble and rerun the script. Do not install Foxy packages into a
-Humble environment. If packages for the correct distribution cannot be found,
-check the ROS APT repository configuration and run `sudo apt update`.
+<details>
+<summary>1.1 Platform and build details</summary>
 
-### Step 2: Extract and Build Pangolin 0.9.3
+| Platform | ROS distribution |
+|---|---|
+| Ubuntu 20.04 | Foxy |
+| Ubuntu 22.04 | Humble |
 
-Enter the `thirdparty` directory and extract Pangolin:
+The native ROS pairings are [Humble with Ubuntu 22.04](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html)
+and [Foxy with Ubuntu 20.04](https://docs.ros.org/en/foxy/Installation/Ubuntu-Install-Debians.html).
+The scripts select dependencies from the sourced ROS distribution and load the
+same distribution at runtime. Use a separate build/checkout when switching ROS
+versions to keep generated interfaces and libraries consistent.
+
+The installer uses `sudo apt-get` for missing dependencies. The build uses all
+CPUs, builds the bundled Pangolin source into `.deps`, and installs the ROS package
+locally. On a computer with limited RAM, including the RK3588, start with:
 
 ```bash
-cd thirdparty
-
-unzip -n Pangolin-0.9.3.zip
-
-cd Pangolin-0.9.3
+CMAKE_BUILD_PARALLEL_LEVEL=2 bash scripts/build.sh
 ```
 
-Run the extraction even if `Pangolin-0.9.3` already exists. The checked-in
-directory is missing headers under `components/pango_packetstream/include/pangolin/log`;
-the bundled ZIP supplies them. `unzip -n` restores missing files without
-overwriting existing files. Skipping this step can cause
-`fatal error: pangolin/log/packet.h: No such file or directory`.
+A clean source build was checked; a fresh operating-system installation was not.
+For headless operation, set `system.with_ui: false` in the selected configuration.
 
-The dependency script above also installs Pangolin's OpenGL, X11, and Wayland
-dependencies, including `wayland-protocols`.
+</details>
 
-Create the build directory and configure the project using CMake:
+## 2. Select a sensor and recording
+
+| Sensor system | Configuration | LiDAR input | IMU input |
+|---|---|---|---|
+| M20 Pro | `config/m20_pro.yaml` | `/LIDAR/POINTS` · `sensor_msgs/msg/PointCloud2` | `/IMU` |
+| Mid360 | `config/mid360.yaml` | `/livox/lidar` · `livox_ros_driver2/msg/CustomMsg` | `/livox/imu` |
+
+Use the same preset for mapping and localization. Set paths for your recording
+and a **new** map directory; `BAG` accepts a SQLite bag directory or `.db3` file:
 
 ```bash
-mkdir -p build
-
-cmake -B build \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DBUILD_EXAMPLES=OFF \
-  -DBUILD_TOOLS=OFF \
-  -DBUILD_PANGOLIN_PYTHON=OFF \
-  -DBUILD_PANGOLIN_LIBOPENEXR=OFF
+export CONFIG="$PWD/config/mid360.yaml"
+export BAG="/absolute/path/to/recording"
+export MAP="$PWD/data/my_map"
 ```
 
-Compile Pangolin:
+For M20 Pro, select `config/m20_pro.yaml`. Check the topic names and sensor
+calibration when using another mounting.
+
+<details>
+<summary>2.1 Timestamps, calibration, and 3D estimation</summary>
+
+LiDAR and IMU messages may arrive asynchronously and at different rates. Their
+timestamps must use a consistent time base: odometry waits for IMU coverage
+through each scan's end and uses per-point times to compensate motion. Exact
+message pairing or simultaneous arrival is unnecessary. The code does not
+estimate sensor clock offsets; correct offsets or drift in the driver/time source.
+Hardware clock synchronization is one way to satisfy this requirement, not an
+extra trigger mechanism required by the application. Bag playback's `--clock`
+does not repair incorrect sensor timestamps.
+
+M20 points require `x`, `y`, `z`, `intensity`, and absolute per-point `timestamp`
+in seconds, on the same time base as the scan header. Mid360 uses `offset_time`
+in nanoseconds relative to the scan header. IMU units are radians/second and
+metres/second².
+
+Extrinsics transform LiDAR points into the IMU frame:
+`p_imu = extrinsic_R * p_lidar + extrinsic_T`. The supplied translations are
+`[0, 0, 0]` for M20 Pro and `[0, 0, 0.28]` for the tested Mid360 mounting.
+The Mid360 value is mounting-specific; calibrate it for your installation.
+
+M20 uses inertial motion prediction. Mid360 uses constant-velocity translation
+with gyro rotation. Both estimate full 3D motion, use 0.5 m scan/map voxels, and
+disable fixed-height and 2D pose constraints. See the
+[implementation notes](doc/implementation.md) for the model and timing details.
+
+</details>
+
+## 3. Build a map
+
+### 3.1 Offline mapping
 
 ```bash
-cmake --build build -j3
+ros2 run lightning run_slam_offline \
+  --config "$CONFIG" --input_bag "$BAG" --map_path "$MAP"
 ```
 
-Install Pangolin after compilation:
+The viewer opens during processing. At the end, the application saves the map,
+prints `map saved`, and closes the viewer.
+
+### 3.2 Online mapping
+
+Start the node before the sensor drivers or bag playback:
 
 ```bash
-sudo cmake --install build
+ros2 run lightning run_slam_online --config "$CONFIG"
 ```
 
-Finally, refresh the dynamic library cache:
+In another sourced terminal, set `BAG` and replay the recording:
 
 ```bash
-sudo ldconfig
+ros2 bag play "$BAG" --rate 1.0
 ```
 
-If no errors occur during compilation, Pangolin 0.9.3 has been successfully built and installed.
-
-### Step 3: Build Lightning-LM
-
-**Low-memory build method**, recommended for onboard computers such as the M20 / RK3588. This can help prevent compilation failures caused by out-of-memory (OOM) errors:
+For live operation, start your sensor drivers using [section 5](#5-connect-the-sensor-drivers).
+When mapping is finished, call this service from another sourced terminal:
 
 ```bash
-cd /path/to/lightning-lm-deep-robotics
-
-export MAKEFLAGS="-j3"
-
-source /opt/ros/humble/setup.bash  # Or /opt/ros/foxy/setup.bash
-# On the M20, use /opt/robot/scripts/setup_ros2.sh instead if provided.
-
-colcon build --parallel-workers 3 --executor sequential --cmake-args -DCMAKE_BUILD_TYPE=Release
-
-source install/setup.bash
+ros2 service call /lightning/save_map lightning/srv/SaveMap "{map_id: online_map}"
 ```
 
-A complete build takes approximately 30 minutes on the RK3588.
+Wait for `response: 0`, then press **Ctrl+C** in the mapping terminal. The map is
+saved to `data/online_map/` relative to that terminal's working directory.
+Choose a new `map_id` for each run. Online mapping requires this explicit save.
 
-Using four CPU cores for compilation may cause the system to freeze because of insufficient memory and OOM issues.
+<details>
+<summary>3.3 Map files and viewer controls</summary>
 
-**Standard build method** for PCs or servers with sufficient memory:
+Keep the complete map directory: `global.pcd` is the full point cloud;
+`index.txt` and numbered `.pcd` tiles are also required for localization.
+Nonempty output directories are protected from overwriting. To localize against
+the online map, set `MAP="$PWD/data/online_map"` in the localization terminal.
+
+Use the mouse to rotate, pan, and zoom; enable **Follow** to track the robot.
+Long routes can extend beyond the initial view. If the viewer is blank, check
+that sensor data is arriving, then adjust the camera. Run from an OpenGL desktop
+with `DISPLAY` set; setup selects Pangolin's X11 backend, including through XWayland.
+
+For the saved-map viewer below, `-ps 2` sets the point size. Press **h** in the
+PCL window for its controls. `pcl-tools` is installed by the dependency script;
+see the [PCL viewer reference](https://pointclouds.org/documentation/tutorials/walkthrough.html#binaries)
+for additional display options. Opening a PCD in this viewer does not modify it.
+
+</details>
+
+### 3.4 View a saved map
+
+After offline mapping finishes:
 
 ```bash
-cd /path/to/lightning-lm-deep-robotics
-
-source /opt/ros/humble/setup.bash  # Or /opt/ros/foxy/setup.bash
-
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
-
-source install/setup.bash
+pcl_viewer "$MAP/global.pcd" -ps 2
 ```
 
-## 3. Configuration
-
-The main configuration file for the M20 robot is:
-
-```text
-config/libraryf_march18_3d.yaml
-```
-
-**Key configuration parameters:**
-
-* **LiDAR type:** Use `fasterlio.lidar_type: 3` for the RoboSense handler in this historical core. The Mid360 preset uses `1`.
-
-* **Topics:** Check whether `common.lidar_topic` and `common.imu_topic` match the actual topics published by the rosbag or the physical robot sensors.
-
-## 4. Mapping (SLAM)
-
-### Option A: Online Mapping
-
-This mode is suitable for physical robot testing or for simulating real-time operation by playing a rosbag at its original speed.
-
-1. **Play the ROS 2 bag:**
+After online mapping returns a successful save response:
 
 ```bash
-ros2 bag play ~/Downloads/m20/lidar_data_bag --clock
+pcl_viewer "$PWD/data/online_map/global.pcd" -ps 2
 ```
 
-**Note:**
+Use your chosen map directory or `map_id` if it differs from these examples.
 
-* Replace `~/Downloads/m20/lidar_data_bag` with the actual path to your rosbag.
+## 4. Localize in a saved map
 
-* Real-time processing requires significant computational resources. When running inside WSL or a virtual machine, it may be necessary to reduce the rosbag playback speed.
+### 4.1 Offline localization
 
 ```bash
-ros2 bag play ~/Downloads/m20/lidar_data_bag --clock -r 0.5
+ros2 run lightning run_loc_offline \
+  --config "$CONFIG" --input_bag "$BAG" --map_path "$MAP" \
+  --trajectory "$PWD/localization.tum"
 ```
 
-2. **Start the online SLAM node:**
+### 4.2 Online localization
 
 ```bash
-ros2 run lightning run_slam_online --config config/libraryf_march18_3d.yaml
+ros2 run lightning run_loc_online \
+  --config "$CONFIG" --map_path "$MAP" \
+  --trajectory "$PWD/localization_online.tum"
 ```
 
-3. **Save the map:**
+Start the drivers or replay the bag from another sourced terminal using the
+command in section 3.2. The viewer shows the reference map, scan, and trajectory.
+Press **Ctrl+C** after playback to close the viewer and flush the trajectory.
 
-After mapping is complete, execute the following command. The map will be saved under the `/lightning-lm-deep-robotics/data` directory:
+<details>
+<summary>4.3 Initialization and pose output</summary>
+
+Initialization starts around the map's saved starting pose. Replaying the mapping
+recording needs no manual initial pose. To start elsewhere, publish
+`geometry_msgs/msg/PoseWithCovarianceStamped` on `/initialpose` with
+`header.frame_id: map`, for example with RViz's **2D Pose Estimate** tool.
+This supplies a starting guess; estimation remains 3D.
+
+Online localization publishes `map` → `base_link` on `/tf` and
+`geometry_msgs/msg/PoseStamped` on `/lightning/pose`. The optional trajectory
+contains valid map matches as `timestamp x y z qx qy qz qw`; an existing trajectory
+file is replaced. Localization keeps the reference map unchanged.
+
+Run mapping and localization separately when evaluating their results. Topic
+names, extrinsics, and the saved map must match the selected sensor setup.
+
+</details>
+
+## 5. Connect the sensor drivers
+
+Start the hardware drivers separately. This repository includes Livox message
+definitions; the full Mid360 driver must come from your driver workspace.
+In that workspace's sourced terminal, export the following from this repository
+root **before launching the driver**:
 
 ```bash
-ros2 service call lightning/save_map lightning/srv/SaveMap "{map_id: new_map}"
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/config/fastdds.xml"
 ```
 
-4. **Check localization status:**
-
-Use the following command to inspect the real-time SLAM odometry state:
-
-```bash
-ros2 topic echo /lightning/nav_state
-```
-
-The output includes:
-
-* Position
-* Orientation quaternion
-* Velocity
-
-### Option B: Offline Mapping
-
-Offline mapping is recommended for quickly generating a map from previously recorded data while avoiding frame loss caused by real-time processing limitations.
-
-1. **Run offline SLAM:**
-
-```bash
-ros2 run lightning run_slam_offline --input_bag path/to/lidar_data_bag_0.db3 --config config/libraryf_march18_3d.yaml
-```
-
-**Note:** After the program finishes, the results are automatically saved to:
-
-```text
-data/new_map
-```
-
-### View Mapping Results
-
-**3D point-cloud map on the server:**
-
-```bash
-pcl_viewer ./data/new_map/global.pcd
-```
-
-**3D point-cloud map over SSH:**
-
-It is recommended to transfer the `data` directory to the local computer and open the map using CloudCompare.
-
-**2D occupancy grid map:**
-
-```bash
-sudo apt install feh
-
-feh data/new_map/map.pgm
-```
-
-## 5. Localization
-
-### Option A: Online Localization
-
-This mode does not display a UI by default.
-
-1. **Play a ROS 2 bag or directly use the physical robot sensors:**
-
-```bash
-ros2 bag play ~/Downloads/m20/lidar_data_bag --clock
-```
-
-2. **Start the localization node:**
-
-Make sure that:
-
-```text
-system.map_path
-```
-
-in the YAML configuration points to the directory containing the map files. The default map is `new_map`.
-
-Run:
-
-```bash
-ros2 run lightning run_loc_online --config config/default_deep_roboticsloc.yaml
-```
-
-### Option B: Offline Localization
-
-Offline localization can process a rosbag without real-time constraints and is useful for validating algorithm performance:
-
-```bash
-ros2 run lightning run_loc_offline --config config/default_deep_roboticsloc.yaml --input_bag [path_to_bag]
-```
-
-## 6. M20 Deployment
-
-The system was tested on the AOS (103) platform, which already has ROS 2 Foxy installed.
-
-### 6.1 Hardware Configuration
-
-#### 6.1.1 Network Configuration
-
-Connect the AOS (103) host to the network.
-
-Edit:
-
-```bash
-vim /etc/NetworkManager/NetworkManager.conf
-```
-
-Remove:
-
-```text
-unmanaged-devices
-```
-
-and the entire:
-
-```text
-[keyfile]
-```
-
-section, and then reboot the robot.
-
-After rebooting, run:
-
-```bash
-nmcli d wifi list
-```
-
-The available Wi-Fi networks should now be displayed.
-
-Connect to Wi-Fi using:
-
-```bash
-sudo nmcli d wifi connect "<wifiname>" password "password" ifname wlan0
-```
-
-To maintain continuous RViz visualization while the robot is moving, ensure that the computer and M20 maintain a stable and persistent Wi-Fi connection.
-
-#### 6.1.2 Point-Cloud Access Permissions
-
-Start the corresponding service on the NOS (106) host using the `user` account:
-
-```bash
-ssh user@10.21.31.106
-
-sudo systemctl start multicast-relay.service
-```
-
-Check the service status:
-
-```bash
-sudo systemctl status multicast-relay.service
-```
-
-The service can also be enabled to start automatically after every robot reboot:
-
-```bash
-sudo systemctl enable multicast-relay.service
-```
-
-After this is complete, switch back to AOS (103) and enter `su` mode.
-
-The password is `'`, i.e., a single English quotation mark.
-
-Then check the LiDAR point cloud:
-
-```bash
-source /opt/robot/scripts/setup_ros2.sh
-
-ros2 topic hz /LIDAR/POINTS
-```
-
-This check should be performed before every SLAM run.
-
-In other words, **before each SLAM test, first confirm that the LiDAR point-cloud topic is accessible and publishing normally.**
-
-### 6.2 Preparation
-
-#### 6.2.1 Dependencies
-
-Install the required dependencies and complete the compilation process according to the **Build Instructions** above.
-
-#### 6.2.2 M20 Visualization Issue
-
-The 3D UI window in `run_slam_online` may crash when Pangolin is initialized.
-
-The main cause is:
-
-**OpenGL / EGL context initialization failure.**
-
-A typical error is:
-
-```text
-eglGetBindAPI(0x30a2) failed: EGL_BAD_PARAMETER (300c)
-```
-
-Due to compatibility issues with EGL + OpenGL on the RK3588 platform, Pangolin visualization and other OpenGL-based applications may fail to start correctly.
-
-Therefore, this modified version primarily uses:
-
-**RViz2**
-
-for visualization.
-
-### 6.3 Recording a rosbag
-
-The following command can be used to record LIO-related real-time topics into a rosbag:
-
-```bash
-taskset -c 4,5,6,7 chrt 90 ros2 bag record -o lio260310 /tf /IMU /LIDAR/POINTS
-```
-
-## 7. SLAM Test
-
-Before running SLAM, make sure that:
-
-* The robot is standing when the program starts, because the system may remove point-cloud data below the estimated ground level.
-
-* The input point-cloud topic is available.
-
-* Dynamic obstacles such as vehicles and pedestrians may reduce system performance.
-
-* Localization may be lost in narrow corridors or when the LiDAR is heavily occluded.
-
-The following node is used for testing:
-
-```text
-run_slam_online
-```
-
-### 7.1 Manual Startup
-
-Mapping mode requires at least four terminal windows.
-
-Run:
-
-```bash
-ros2 run lightning run_slam_online --config config/libraryf_march18_3d.yaml
-```
-
-Save the map:
-
-```bash
-ros2 service call /lightning/save_map lightning/srv/SaveMap "{map_id: 'new_map'}"
-```
-
-View the map:
-
-```bash
-pcl_viewer ./data/new_map/global.pcd
-```
-
-## 8. Localization Test
-
-Localization testing uses the:
-
-```text
-run_loc_online
-```
-
-node.
-
-The overall procedure is similar to SLAM, but the map configuration must be correct.
-
-Check whether `map_path` in the loaded YAML configuration points to the correct point-cloud map directory.
-
-For example:
-
-```yaml
-system:
-  map_path: ./data/office30/global.pcd
-```
-
-Make sure that the map file is valid.
-
-### 8.1 Start Online Localization
-
-Localization mode requires at least three terminal windows.
-
-Start the localization node:
-
-```bash
-ros2 run lightning run_loc_online --config config/default_deep_roboticsloc.yaml
-```
-
-Publish the PCD map:
-
-```bash
-ros2 run lightning pcd_map_publisher \
-    --ros-args \
-    -p pcd_path:=data/office30/global.pcd \
-    -p voxel_size:=0.3
-```
-
-Start RViz2:
-
-```bash
-rviz2 -d config/default.rviz
-```
-
-## 9. Configuration and Result Verification
-
-This project enables:
-
-```text
-pub_tf
-```
-
-by default for RViz2 visualization.
-
-### 9.1 Mapping Mode Configuration
-
-The following configuration options have been added to support:
-
-1. Printing or publishing localization state and odometry messages.
-
-2. Optionally publishing point clouds, trajectories, and other mapping results.
-
-Add the following settings to the YAML configuration:
-
-```yaml
-system:
-  log_pose_opt: false                   # Whether to print position/velocity directly in the terminal
-  pub_odom: true                        # Whether to publish the odometry topic
-  enable_lidar_loc_rviz: false          # Whether to enable RViz point-cloud publishing
-  rviz_current_scan_topic: "/current_scan_cloud"
-  rviz_global_map_topic: "/global_map_cloud"
-  enable_path_rviz: true
-  pub_tf: true
-```
-
-By default, point clouds are not published.
-
-The default configuration provides basic functionality including:
-
-* Trajectory saving
-* `nav_state` state output
-
-### 9.2 Localization Mode Configuration
-
-When running `loc_online`, first check whether `map_path` is correct.
-
-If another initial pose needs to be specified manually, use the following configuration:
-
-```yaml
-system:
-  map_path: ./data/office30
-  use_init_pose: true
-  init_pos: [0.0, 0.0, 0.0]             # Initial position in the point-cloud map [x, y, z]
-  init_quat: [0.0, 0.0, 0.0, 1.0]       # Initial orientation relative to the global map [x, y, z, w]
-```
-
-### 9.3 Using tmux Sessions
-
-Press:
-
-```text
-Ctrl+b
-```
-
-and then press:
-
-```text
-0 / 1 / 2 / 4
-```
-
-to switch between the four sub-windows.
-
-Common commands:
-
-```bash
-Ctrl+b, d # Detach from the current tmux session
-
-Ctrl+b, c # Create a new window/tab
-
-su
-
-tmux attach -t lg # Reattach to the lg session
-
-tmux kill-session -t lg # Terminate the lg session
-```
-
-If the SSH connection is interrupted because of a network failure, reconnect to the robot and reattach to the existing tmux session.
-
-After reconnecting using MobaXterm, run the following command in `su` mode:
-
-```bash
-tmux attach -t lg
-```
-
-This returns to the programs that are still running inside the tmux session.
-
-Use:
-
-```text
-Ctrl+b 0
-```
-
-to check the running status of the SLAM / Localization node.
-
-### 9.4 RViz2 Real-Time Visualization
-
-Although the original Pangolin interface is more efficient, this project also provides RViz2 visualization.
-
-RViz displays:
-
-* TF: `map -> lightning_base_link`
-* Global PointCloud2 map: `/global_map`
-* Path: `/lightning/path`
-
-In SLAM mode:
-
-```text
-globalMap
-```
-
-is continuously updated as new keyframes are generated.
-
-In Localization mode:
-
-The global map is loaded from the input map file and remains unchanged during online localization.
-
-Some of the topics listed above are not published every second.
-
-**Note:**
-
-RViz2 can be displayed normally through MobaXterm, but it cannot be displayed properly through a VSCode Remote window.
-
-#### 9.4.1 Restarting RViz2 After a Network Reconnection
-
-If the connection is interrupted because of a network failure, reconnect to the robot and restart RViz2 using:
-
-```bash
-source /opt/robot/scripts/setup_ros2.sh
-
-pkill -f rviz2
-
-rviz2 -d src/lightning-lm-deep-robotics/config/showbodypc.rviz
-```
+Keep the driver's existing reliability setting. Lightning-LM uses **best-effort**
+subscriptions and accepts either best-effort or reliable sensor publishers.
+
+<details>
+<summary>5.1 Best-effort DDS and the larger shared-memory buffer</summary>
+
+Best effort avoids waiting for retransmission of missing samples. Adequate
+processing capacity and buffering still matter; delivery is not guaranteed.
+A reliable Mid360 publisher does **not** need to be changed to best effort.
+A best-effort publisher cannot satisfy a reliable subscriber, so both supplied
+presets retain `common.sensor_qos: best_effort`.
+See the [ROS 2 QoS compatibility rules](https://docs.ros.org/en/humble/Concepts/Intermediate/About-Quality-of-Service-Settings.html#qos-compatibilities).
+
+`scripts/setup.bash` selects Fast DDS and loads `config/fastdds.xml`, increasing
+the shared-memory segment to **64 MiB per participant**, with an **8 MiB** maximum
+message and **4096** queued descriptors. Some M20 scans approach 4 MiB; Fast DDS
+2.6's default 512 KiB segment can be too small for one scan. This expands transport
+capacity while preserving best-effort QoS. See the
+[Fast DDS buffer documentation](https://fast-dds.docs.eprosima.com/en/2.6.x/fastdds/transport/shared_memory/shared_memory.html).
+
+Apply the profile to the application and publisher, including the bag player.
+Restart an existing driver after applying it: outgoing buffers belong to the
+publisher. Keep the driver's own workspace sourced; sourcing Lightning-LM's
+overlay there can shadow the full `livox_ros_driver2` package with message-only
+definitions. Explicit middleware/profile environment overrides are preserved by
+setup and must select Fast DDS and this XML to use these settings.
+
+Shared memory applies on the same computer. UDP remains enabled between
+computers, where network and socket capacity need separate validation.
+If playback falls behind, reduce `--rate`. Larger queues cannot fix sustained
+CPU overload.
+
+</details>
+
+## 6. Results and onboard resources
+
+<details>
+<summary>6.1 Seven-dataset reconstruction and localization results</summary>
+
+All seven recordings passed offline/online mapping and offline/online localization
+checks on Ubuntu 22.04 / Humble, with the viewer enabled and online playback at 1×.
+Each sensor family uses one preset without route-specific tuning.
+
+| Recording | Configuration | Offline mapping | Online mapping | Offline localization | Online localization |
+|---|---|---|---|---|---|
+| Library F | `m20_pro.yaml` | Pass | Pass | Pass | Pass |
+| Office | `m20_pro.yaml` | Pass | Pass | Pass | Pass |
+| Building 1 | `mid360.yaml` | Pass | Pass | Pass | Pass |
+| Building 2 | `mid360.yaml` | Pass | Pass | Pass | Pass |
+| Building 3 | `mid360.yaml` | Pass | Pass | Pass | Pass |
+| Grass 2 | `mid360.yaml` | Pass | Pass | Pass | Pass |
+| Road 1 | `mid360.yaml` | Pass | Pass | Pass | Pass |
+
+Checks include input counts, rendered viewers, saved point clouds, valid
+localization trajectories, pose/TF publication, and preservation of reference
+maps. One preceding best-effort run missed one IMU sample; its unchanged repeat
+passed. Library F retains visible revisit misalignment. These are operational
+and qualitative reconstruction results, without surveyed ground-truth accuracy.
+See [validation details and recording paths](doc/validation.md) for the evidence.
+
+</details>
+
+<details>
+<summary>6.2 RK3588 and the 16 GB memory budget</summary>
+
+The largest measured application memory footprint was **1.26 GiB**, or **1.41 GiB**
+including bag playback, on the x86 workstation with visualization enabled.
+These sampled sums of process RSS exclude the display server, OS, and other robot
+software; shared pages may be counted twice. RK3588 runtime and memory still
+require hardware testing.
+
+Point sampling remains every sixth M20 point or every fourth Mid360 point, with
+0.5 m voxels. Map localization is capped at 5 Hz while incoming scans and IMU
+samples continue through odometry. NDT and parallel point processing each use a
+four-worker limit; OpenMP defaults to passive waiting. Sensor queues are bounded,
+and localization unloads distant map tiles. Mapping memory grows with route length
+because loop closure retains keyframes.
+
+Start onboard builds with two jobs and validation at normal sensor rate. Disable
+`system.with_ui` for headless operation. If map matching cannot keep up, lower
+`lidar_loc.max_frequency` and recheck tracking. See
+[resource and implementation details](doc/implementation.md).
+
+</details>
+
+## 7. Maintenance and license
+
+Contributor guidance lives in [AGENTS.md](AGENTS.md), with detailed
+[implementation](doc/implementation.md) and [validation](doc/validation.md) notes.
+
+Based on [Lightning-LM](https://github.com/gaoxiang12/lightning-lm).
+See [LICENSE.txt](LICENSE.txt) for the BSD 3-Clause license. Bundled dependencies
+retain their own licenses.

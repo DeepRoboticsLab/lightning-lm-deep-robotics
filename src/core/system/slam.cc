@@ -3,7 +3,6 @@
 //
 
 #include "core/system/slam.h"
-#include "utils/reconstruction_diagnostics.h"
 #include "core/g2p5/g2p5.h"
 #include "core/lio/laser_mapping.h"
 #include "core/loop_closing/loop_closing.h"
@@ -17,10 +16,7 @@
 
 namespace lightning {
 
-SlamSystem::SlamSystem(lightning::SlamSystem::Options options) : options_(options) {
-    /// handle ctrl-c
-    signal(SIGINT, lightning::debug::SigHandle);
-}
+SlamSystem::SlamSystem(lightning::SlamSystem::Options options) : options_(options) {}
 
 bool SlamSystem::Init(const std::string& yaml_path) {
     lio_ = std::make_shared<LaserMapping>();
@@ -29,13 +25,6 @@ bool SlamSystem::Init(const std::string& yaml_path) {
         return false;
     }
 
-    if (!options_.online_mode_) {
-        diagnostics_dir_ = diagnostics::Directory(yaml_path);
-        if (!diagnostics_dir_.empty()) {
-            diagnostics::Open(diagnostics_lio_, diagnostics_dir_ + "/lio.csv",
-                              "timestamp,x,y,z,qx,qy,qz,qw");
-        }
-    }
     auto yaml = YAML::LoadFile(yaml_path);
     options_.with_loop_closing_ = yaml["system"]["with_loop_closing"].as<bool>();
     options_.with_visualization_ = yaml["system"]["with_ui"].as<bool>();
@@ -96,11 +85,14 @@ bool SlamSystem::Init(const std::string& yaml_path) {
         cloud_topic_ = yaml["common"]["lidar_topic"].as<std::string>();
         livox_topic_ = yaml["common"]["livox_lidar_topic"].as<std::string>();
 
-        rclcpp::QoS qos(10);
-        // qos.best_effort();
+        auto imu_qos = rclcpp::QoS(rclcpp::KeepLast(1000));
+        auto lidar_qos = rclcpp::QoS(rclcpp::KeepLast(16));
+        const auto reliability = yaml["common"]["sensor_qos"].as<std::string>("best_effort");
+        if (reliability == "best_effort") { imu_qos.best_effort(); lidar_qos.best_effort(); }
+        else if (reliability != "reliable") throw std::invalid_argument("sensor_qos must be reliable or best_effort");
 
         imu_sub_ = node_->create_subscription<sensor_msgs::msg::Imu>(
-            imu_topic_, qos, [this](sensor_msgs::msg::Imu::SharedPtr msg) {
+            imu_topic_, imu_qos, [this](sensor_msgs::msg::Imu::SharedPtr msg) {
                 IMUPtr imu = std::make_shared<IMU>();
                 imu->timestamp = ToSec(msg->header.stamp);
                 imu->linear_acceleration =
@@ -108,23 +100,29 @@ bool SlamSystem::Init(const std::string& yaml_path) {
                 imu->angular_velocity =
                     Vec3d(msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z);
 
-                ProcessIMU(imu);
+                sensor_queue_.AddMessage([this, imu]() { ProcessIMU(imu); }, sizeof(IMU) + 128);
             });
 
         cloud_sub_ = node_->create_subscription<sensor_msgs::msg::PointCloud2>(
-            cloud_topic_, qos, [this](sensor_msgs::msg::PointCloud2::SharedPtr cloud) {
-                Timer::Evaluate([&]() { ProcessLidar(cloud); }, "Proc Lidar", true);
+            cloud_topic_, lidar_qos, [this](sensor_msgs::msg::PointCloud2::SharedPtr cloud) {
+                sensor_queue_.AddMessage([this, cloud]() { ProcessLidar(cloud); }, cloud->data.size() + sizeof(*cloud) + 256);
             });
 
         livox_sub_ = node_->create_subscription<livox_ros_driver2::msg::CustomMsg>(
-            livox_topic_, qos, [this](livox_ros_driver2::msg::CustomMsg ::SharedPtr cloud) {
-                Timer::Evaluate([&]() { ProcessLidar(cloud); }, "Proc Lidar", true);
+            livox_topic_, lidar_qos, [this](livox_ros_driver2::msg::CustomMsg ::SharedPtr cloud) {
+                sensor_queue_.AddMessage([this, cloud]() { ProcessLidar(cloud); },
+                                        cloud->points.size() * sizeof(cloud->points[0]) + sizeof(*cloud) + 128);
             });
 
         savemap_service_ = node_->create_service<SaveMapService>(
             "lightning/save_map", [this](const SaveMapService::Request::SharedPtr& req,
                                          SaveMapService::Response::SharedPtr res) { SaveMap(req, res); });
 
+        sensor_queue_.SetName("sensor input");
+        sensor_queue_.SetMaxSize(4096);
+        sensor_queue_.SetMaxBytes(128 * 1024 * 1024);
+        sensor_queue_.SetProcFunc([](const std::function<void()>& process) { process(); });
+        sensor_queue_.Start();
         LOG(INFO) << "online slam node has been created.";
     }
 
@@ -132,6 +130,9 @@ bool SlamSystem::Init(const std::string& yaml_path) {
 }
 
 SlamSystem::~SlamSystem() {
+    sensor_queue_.Quit();
+    LOG(INFO) << "SLAM input: lidar=" << lidar_messages_ << ", imu=" << imu_messages_;
+    if (lc_) lc_->WaitUntilIdle();
     if (ui_) {
         ui_->Quit();
     }
@@ -144,14 +145,30 @@ void SlamSystem::StartSLAM(std::string map_name) {
 
 void SlamSystem::SaveMap(const SaveMapService::Request::SharedPtr request,
                          SaveMapService::Response::SharedPtr response) {
+    if (request->map_id.empty() || request->map_id == "." || request->map_id == ".." ||
+        request->map_id.find_first_of("/\\") != std::string::npos) {
+        LOG(ERROR) << "map_id must be a directory name";
+        response->response = 2;
+        return;
+    }
     map_name_ = request->map_id;
     std::string save_path = "./data/" + map_name_ + "/";
 
-    SaveMap(save_path);
-    response->response = 0;
+    try {
+        response->response = SaveMap(save_path) ? 0 : 3;
+    } catch (const std::exception& e) {
+        LOG(ERROR) << "Map save failed: " << e.what();
+        response->response = 2;
+    }
 }
 
-void SlamSystem::SaveMap(const std::string& path) {
+bool SlamSystem::SaveMap(const std::string& path) {
+    sensor_queue_.WaitUntilIdle();
+    if (lc_) lc_->WaitUntilIdle();
+    if (lio_->GetAllKeyframes().empty()) {
+        LOG(ERROR) << "No keyframes to save; provide LiDAR and IMU data first";
+        return false;
+    }
     std::string save_path = path;
     if (save_path.empty()) {
         save_path = "./data/" + map_name_ + "/";
@@ -162,12 +179,15 @@ void SlamSystem::SaveMap(const std::string& path) {
     if (!std::filesystem::exists(save_path)) {
         std::filesystem::create_directories(save_path);
     } else {
-        std::filesystem::remove_all(save_path);
-        std::filesystem::create_directories(save_path);
+        if (!std::filesystem::is_empty(save_path)) {
+            LOG(ERROR) << "Map directory already contains files: " << save_path;
+            return false;
+        }
     }
 
     // auto global_map_no_loop = lio_->GetGlobalMap(true);
     auto global_map = lio_->GetGlobalMap(!options_.with_loop_closing_);
+    if (!global_map || global_map->empty()) return false;
     // auto global_map_raw = lio_->GetGlobalMap(!options_.with_loop_closing_, false, 0.1);
 
     TiledMap::Options tm_options;
@@ -177,7 +197,7 @@ void SlamSystem::SaveMap(const std::string& path) {
     SE3 start_pose = lio_->GetAllKeyframes().front()->GetOptPose();
     tm.ConvertFromFullPCD(global_map, start_pose, save_path);
 
-    pcl::io::savePCDFileBinaryCompressed(save_path + "/global.pcd", *global_map);
+    if (pcl::io::savePCDFileBinaryCompressed(save_path + "/global.pcd", *global_map) < 0) return false;
     // pcl::io::savePCDFileBinaryCompressed(save_path + "/global_no_loop.pcd", *global_map_no_loop);
     // pcl::io::savePCDFileBinaryCompressed(save_path + "/global_raw.pcd", *global_map_raw);
 
@@ -209,7 +229,7 @@ void SlamSystem::SaveMap(const std::string& path) {
         std::ofstream yamlFile(save_path + "/map.yaml");
         if (!yamlFile.is_open()) {
             LOG(ERROR) << "failed to write map.yaml";
-            return;  // 文件打开失败
+            return false;
         }
 
         try {
@@ -232,84 +252,39 @@ void SlamSystem::SaveMap(const std::string& path) {
             yamlFile.close();
         } catch (...) {
             yamlFile.close();
-            return;
+            return false;
         }
     }
 
-    if (!diagnostics_dir_.empty()) {
-        diagnostics::Keyframes(diagnostics_dir_, lio_->GetAllKeyframes());
-        std::filesystem::create_directories(diagnostics_dir_ + "/clouds");
-        for (const auto& kf : lio_->GetAllKeyframes()) {
-            pcl::io::savePCDFileBinaryCompressed(diagnostics_dir_ + "/clouds/" +
-                std::to_string(kf->GetID()) + ".pcd", *kf->GetCloud());
-        }
-        diagnostics_lio_.flush();
-        if (lc_) lc_->ExportFinalDiagnostics();
-        std::ofstream state(diagnostics_dir_ + "/finalization.txt");
-        state << "offline synchronous bag processing complete; map saved; no final graph refinement\n";
-    }
     LOG(INFO) << "map saved";
+    return true;
 }
 
 void SlamSystem::ProcessIMU(const lightning::IMUPtr& imu) {
     if (running_ == false) {
         return;
     }
+    ++imu_messages_;
     lio_->ProcessIMU(imu);
+    if (options_.online_mode_) ProcessBufferedLidar(true);
 }
 
 void SlamSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr& cloud) {
-    if (running_ == false) {
-        return;
-    }
-
+    if (!running_) return;
+    ++lidar_messages_;
     lio_->ProcessPointCloud2(cloud);
-    bool processed = lio_->Run();
-    if (processed && diagnostics_lio_.is_open()) {
-        const auto state = lio_->GetState();
-        diagnostics_lio_ << state.timestamp_ << ',';
-        diagnostics::Pose(diagnostics_lio_, state.GetPose());
-        diagnostics_lio_ << '\n';
-    }
-
-    auto kf = lio_->GetKeyframe();
-    if (kf != cur_kf_) {
-        cur_kf_ = kf;
-    } else {
-        return;
-    }
-
-    if (cur_kf_ == nullptr) {
-        return;
-    }
-
-    if (options_.with_loop_closing_) {
-        lc_->AddKF(cur_kf_);
-    }
-
-    if (options_.with_gridmap_) {
-        g2p5_->PushKeyframe(cur_kf_);
-    }
-
-    if (ui_) {
-        ui_->UpdateKF(cur_kf_);
-    }
+    ProcessBufferedLidar();
 }
 
 void SlamSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr& cloud) {
-    if (running_ == false) {
-        return;
-    }
-
+    if (!running_) return;
+    ++lidar_messages_;
     lio_->ProcessPointCloud2(cloud);
-    bool processed = lio_->Run();
-    if (processed && diagnostics_lio_.is_open()) {
-        const auto state = lio_->GetState();
-        diagnostics_lio_ << state.timestamp_ << ',';
-        diagnostics::Pose(diagnostics_lio_, state.GetPose());
-        diagnostics_lio_ << '\n';
-    }
+    ProcessBufferedLidar();
+}
 
+void SlamSystem::ProcessBufferedLidar(bool quiet_sync) {
+    lio_->Run(quiet_sync);
     auto kf = lio_->GetKeyframe();
     if (kf != cur_kf_) {
         cur_kf_ = kf;

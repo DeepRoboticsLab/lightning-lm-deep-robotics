@@ -55,7 +55,7 @@ class LaserMapping {
     /// init without ros
     bool Init(const std::string &config_yaml);
 
-    bool Run();
+    bool Run(bool quiet_sync = false);
 
     // callbacks of lidar and imu
     /// 处理ROS2的点云

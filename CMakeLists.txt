@@ -2,6 +2,17 @@ cmake_minimum_required(VERSION 3.16)
 
 project(lightning)
 
+# Record the selected ROS distribution so runtime setup uses the same underlay.
+if(NOT "$ENV{ROS_DISTRO}" MATCHES "^(foxy|humble)$")
+    message(FATAL_ERROR "Source a ROS 2 Foxy or Humble environment before building.")
+endif()
+if(DEFINED LIGHTNING_ROS_DISTRO AND NOT LIGHTNING_ROS_DISTRO STREQUAL "$ENV{ROS_DISTRO}")
+    message(FATAL_ERROR "This build belongs to ROS ${LIGHTNING_ROS_DISTRO}. Use a separate checkout/build directory for ROS $ENV{ROS_DISTRO}.")
+endif()
+set(LIGHTNING_ROS_DISTRO "$ENV{ROS_DISTRO}" CACHE STRING "ROS distribution used by this build")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/ros_distro" "${LIGHTNING_ROS_DISTRO}\n")
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/ros_distro" DESTINATION share/${PROJECT_NAME})
+
 # Default to C++17
 if (NOT CMAKE_CXX_STANDARD)
     set(CMAKE_CXX_STANDARD 17)
@@ -52,7 +63,7 @@ include_directories(
 )
 
 install(DIRECTORY config
-        DESTINATION lib/${PROJECT_NAME}/
+        DESTINATION share/${PROJECT_NAME}/
 )
 
 add_subdirectory(thirdparty/livox_ros_driver)

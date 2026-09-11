@@ -1,0 +1,51 @@
+[
+  {
+    "dataset": "libraryf",
+    "current_config": "config/m20_pro.yaml",
+    "bag": "/home/ubuntu/deep-robotics/dataset/m20_lidar_data/libraryf/libraryf_0.db3",
+    "configuration_matches_reference": true,
+    "sensor_topics_and_types_match": true
+  },
+  {
+    "dataset": "office",
+    "current_config": "config/m20_pro.yaml",
+    "bag": "/home/ubuntu/deep-robotics/dataset/m20_lidar_data/office/lidar_data_bag_0.db3",
+    "configuration_matches_reference": true,
+    "sensor_topics_and_types_match": true
+  },
+  {
+    "dataset": "building1",
+    "current_config": "config/mid360.yaml",
+    "bag": "/home/ubuntu/deep-robotics/dataset/lite3_lidar_data/building1/building1_0.db3",
+    "configuration_matches_reference": true,
+    "sensor_topics_and_types_match": true
+  },
+  {
+    "dataset": "building2",
+    "current_config": "config/mid360.yaml",
+    "bag": "/home/ubuntu/deep-robotics/dataset/lite3_lidar_data/building2/building2_0.db3",
+    "configuration_matches_reference": true,
+    "sensor_topics_and_types_match": true
+  },
+  {
+    "dataset": "building3",
+    "current_config": "config/mid360.yaml",
+    "bag": "/home/ubuntu/deep-robotics/dataset/lite3_lidar_data/building3/building3_0.db3",
+    "configuration_matches_reference": true,
+    "sensor_topics_and_types_match": true
+  },
+  {
+    "dataset": "grass2",
+    "current_config": "config/mid360.yaml",
+    "bag": "/home/ubuntu/deep-robotics/dataset/lite3_lidar_data/grass2/grass2_0.db3",
+    "configuration_matches_reference": true,
+    "sensor_topics_and_types_match": true
+  },
+  {
+    "dataset": "road1",
+    "current_config": "config/mid360.yaml",
+    "bag": "/home/ubuntu/deep-robotics/dataset/lite3_lidar_data/road1/road1_0.db3",
+    "configuration_matches_reference": true,
+    "sensor_topics_and_types_match": true
+  }
+]

@@ -3,7 +3,6 @@
 //
 
 #include "core/loop_closing/loop_closing.h"
-#include "utils/reconstruction_diagnostics.h"
 #include <chrono>
 #include "common/keyframe.h"
 #include "common/loop_candidate.h"
@@ -57,34 +56,11 @@ void LoopClosing::Init(const std::string yaml_path) {
             YAML::LoadFile(yaml_path)["loop_closing"]["optimize_on_every_keyframe"].as<bool>(true);
     }
 
-    if (!options_.online_mode_) {
-        diagnostics_dir_ = diagnostics::Directory(yaml_path);
-        if (!diagnostics_dir_.empty()) {
-            diagnostics::Open(diagnostics_snapshots_, diagnostics_dir_ + "/snapshots.csv", "event,phase,id,timestamp,x,y,z,qx,qy,qz,qw");
-            diagnostics::Open(diagnostics_candidates_, diagnostics_dir_ + "/candidates.csv", "event,id1,id2,stage,resolution,score,converged,iterations,target_points,source_points,x,y,z,qx,qy,qz,qw,reason");
-            diagnostics::Open(diagnostics_edges_, diagnostics_dir_ + "/edges.csv", "event,phase,edge,id1,id2,level,active,chi2,robust_delta,x,y,z,qx,qy,qz,qw");
-            diagnostics::Open(diagnostics_solves_, diagnostics_dir_ + "/solves.csv", "event,vertices,active_edges,iterations,seconds,cost");
-            std::ofstream effective(diagnostics_dir_ + "/backend-effective.txt");
-            effective << std::setprecision(17) << "loop_kf_gap=" << options_.loop_kf_gap_
-                << "\nmin_id_interval=" << options_.min_id_interval_
-                << "\nclosest_id_th=" << options_.closest_id_th_
-                << "\nmax_range=" << options_.max_range_
-                << "\nndt_score_th=" << options_.ndt_score_th_
-                << "\nwith_height=" << options_.with_height_
-                << "\noptimize_on_every_keyframe=" << options_.optimize_on_every_keyframe_
-                << "\nmotion_trans_noise=" << options_.motion_trans_noise_
-                << "\nmotion_rot_noise=" << options_.motion_rot_noise_
-                << "\nloop_trans_noise=" << options_.loop_trans_noise_
-                << "\nloop_rot_noise=" << options_.loop_rot_noise_
-                << "\nrk_loop_th=" << options_.rk_loop_th_
-                << "\nheight_noise=" << options_.height_noise_
-                << "\nparallel=" << config.parallel_ << "\nincremental=" << config.incremental_mode_ << '\n';
-        }
-    }
     if (options_.online_mode_) {
         LOG(INFO) << "loop closing module is running in online mode";
         kf_thread_.SetProcFunc([this](Keyframe::Ptr kf) { HandleKF(kf); });
         kf_thread_.SetName("handle loop closure");
+        kf_thread_.SetMaxSize(std::numeric_limits<size_t>::max());
         kf_thread_.Start();
     }
 }
@@ -181,11 +157,6 @@ void LoopClosing::ComputeLoopCandidates() {
     std::vector<LoopCandidate> succ_candidates;
     for (const auto& lc : candidates_) {
         LOG(INFO) << "candi " << lc.idx1_ << ", " << lc.idx2_ << " s: " << lc.ndt_score_;
-        if (diagnostics_candidates_.is_open()) {
-            diagnostics_candidates_ << cur_kf_->GetID() << ',' << lc.idx1_ << ',' << lc.idx2_ << ",decision,0," << lc.ndt_score_ << ",0,0,0,0,";
-            diagnostics::Pose(diagnostics_candidates_, lc.Tij_);
-            diagnostics_candidates_ << ',' << (lc.ndt_score_ > options_.ndt_score_th_ ? "accepted_score" : "rejected_score") << '\n';
-        }
         if (lc.ndt_score_ > options_.ndt_score_th_) {
             succ_candidates.emplace_back(lc);
         }
@@ -268,14 +239,6 @@ void LoopClosing::ComputeForCandidate(lightning::LoopCandidate& c) {
         Tw2 = ndt.getFinalTransformation();
 
         c.ndt_score_ = ndt.getTransformationProbability();
-        if (diagnostics_candidates_.is_open()) {
-            diagnostics_candidates_ << cur_kf_->GetID() << ',' << c.idx1_ << ',' << c.idx2_ << ",ndt," << r << ',' << c.ndt_score_ << ','
-                << ndt.hasConverged() << ',' << ndt.getFinalNumIteration() << ',' << rough_map1->size() << ',' << rough_map2->size() << ',';
-            Mat4d diagnostic_T = Tw2.cast<double>();
-            Quatd diagnostic_q(diagnostic_T.block<3,3>(0,0)); diagnostic_q.normalize();
-            diagnostics::Pose(diagnostics_candidates_, SE3(diagnostic_q, Vec3d(diagnostic_T.block<3,1>(0,3))));
-            diagnostics_candidates_ << ",registered_world_pose\n";
-        }
     }
 
     Mat4d T = Tw2.cast<double>();
@@ -354,17 +317,7 @@ void LoopClosing::PoseOptimization() {
     optimizer_->InitializeOptimization();
     optimizer_->SetVerbose(false);
 
-    if (!diagnostics_dir_.empty()) {
-        DiagnosticSnapshot("before");
-        DiagnosticEdges("before");
-    }
-    const auto solve_start = std::chrono::steady_clock::now();
-    const int solve_iterations = optimizer_->Optimize(20);
-    if (diagnostics_solves_.is_open()) {
-        diagnostics_solves_ << cur_kf_->GetID() << ',' << kf_vert_.size() << ',' << optimizer_->ActiveEdges().size() << ',' << solve_iterations << ','
-            << std::chrono::duration<double>(std::chrono::steady_clock::now()-solve_start).count() << ',' << optimizer_->ActiveRobustChi2() << '\n';
-    }
-
+    optimizer_->Optimize(20);
     /// remove outliers
     int cnt_outliers = 0;
     for (auto& e : edge_loops_) {
@@ -390,10 +343,6 @@ void LoopClosing::PoseOptimization() {
         all_keyframes_[vert->GetId()]->SetOptPose(pose);
     }
 
-    if (!diagnostics_dir_.empty()) {
-        DiagnosticSnapshot("after");
-        DiagnosticEdges("after");
-    }
     if (loop_cb_) {
         loop_cb_();
     }
@@ -404,26 +353,4 @@ void LoopClosing::PoseOptimization() {
     //           << ", lio: " << cur_kf_->GetLIOPose().translation().transpose();
 }
 
-void LoopClosing::DiagnosticSnapshot(const char* phase) {
-    for (const auto& kf : all_keyframes_) {
-        diagnostics_snapshots_ << cur_kf_->GetID() << ',' << phase << ',' << kf->GetID() << ',' << kf->GetState().timestamp_ << ',';
-        diagnostics::Pose(diagnostics_snapshots_, kf->GetOptPose());
-        diagnostics_snapshots_ << '\n';
-    }
-}
-void LoopClosing::DiagnosticEdges(const char* phase) {
-    const auto& active = optimizer_->ActiveEdges();
-    for (const auto& e : edge_loops_) {
-        e->ComputeError();
-        diagnostics_edges_ << cur_kf_->GetID() << ',' << phase << ',' << e->GetInternalId() << ',' << e->GetVertex(0)->GetId() << ',' << e->GetVertex(1)->GetId() << ','
-            << e->Level() << ',' << (std::find(active.begin(),active.end(),e.get()) != active.end()) << ',' << e->Chi2() << ','
-            << (e->GetRobustKernel() ? e->GetRobustKernel()->Delta() : 0) << ',';
-        diagnostics::Pose(diagnostics_edges_, e->GetMeasurement()); diagnostics_edges_ << '\n';
-    }
-}
-void LoopClosing::ExportFinalDiagnostics() {
-    if (diagnostics_dir_.empty()) return;
-    DiagnosticSnapshot("final"); DiagnosticEdges("final");
-    diagnostics_snapshots_.flush(); diagnostics_candidates_.flush(); diagnostics_edges_.flush(); diagnostics_solves_.flush();
-}
 }  // namespace lightning

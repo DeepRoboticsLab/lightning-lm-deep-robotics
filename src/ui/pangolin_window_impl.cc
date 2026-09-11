@@ -1,4 +1,5 @@
 #include <pangolin/display/default_font.h>
+#include <pangolin/display/process.h>
 #include <string>
 #include <thread>
 
@@ -41,6 +42,8 @@ bool PangolinWindowImpl::Init() {
 void PangolinWindowImpl::Reset(const std::vector<Keyframe::Ptr> &keyframes) {
     UL lock(mtx_reset_);
     cloud_map_ui_.clear();
+    { UL lock(mtx_current_scan_); all_keyframes_ = keyframes; }
+    keyframe_clouds_.clear();
     scans_.clear();
     current_scan_ui_ = nullptr;
     traj_scans_->Clear();
@@ -187,6 +190,28 @@ bool PangolinWindowImpl::UpdateState() {
 }
 
 void PangolinWindowImpl::DrawAll() {
+    // Display a sample of each mapping keyframe; the exported map keeps all points.
+    std::vector<Keyframe::Ptr> keyframes;
+    {
+        UL lock(mtx_current_scan_);
+        keyframes = all_keyframes_;
+    }
+    while (keyframe_clouds_.size() < keyframes.size()) {
+        const auto& source = keyframes[keyframe_clouds_.size()]->GetCloud();
+        auto sample = std::make_shared<PointCloudType>();
+        sample->reserve((source->size() + 7) / 8);
+        for (size_t i = 0; i < source->size(); i += 8) sample->push_back(source->points[i]);
+        auto cloud = std::make_shared<UiCloud>(sample);
+        cloud->SetRenderColor(UiCloud::HEIGHT_COLOR);
+        keyframe_clouds_.push_back(cloud);
+    }
+    for (size_t i = 0; i < keyframe_clouds_.size(); ++i) {
+        const Mat4f pose = keyframes[i]->GetOptPose().matrix().cast<float>();
+        glPushMatrix();
+        glMultMatrixf(pose.data());
+        keyframe_clouds_[i]->Render();
+        glPopMatrix();
+    }
     /// 地图
     for (const auto &pc : cloud_map_ui_) {
         pc.second->Render();
@@ -337,6 +362,9 @@ void PangolinWindowImpl::CreateDisplayLayout() {
 
 void PangolinWindowImpl::Render() {
     pangolin::BindToContext(win_name_);
+    // Some X11 servers do not send an initial ConfigureNotify. Initialize the
+    // viewport before laying out views instead of waiting for a window resize.
+    pangolin::process::Resize(win_width_, win_height_);
 
     // Issue specific OpenGl we might need
     // 启用OpenGL深度测试和混合功能，以支持透明度等效果。
@@ -357,7 +385,6 @@ void PangolinWindowImpl::Render() {
     // display layout
     CreateDisplayLayout();
 
-    exit_flag_.store(false);
     while (!pangolin::ShouldQuit() && !exit_flag_) {
         // Clear entire screen
         glClearColor(20.0 / 255.0, 20.0 / 255.0, 20.0 / 255.0, 1.0);
@@ -418,9 +445,7 @@ std::string PangolinWindowImpl::GetWindowName() const { return win_name_; }
 
 void PangolinWindowImpl::AllocateBuffer() {
     std::string global_text(
-        "Welcome to SAD.UI. Open source code: https://github.com/gaoxiang12/slam_in_autonomous_driving. All right "
-        "reserved.\n"
-        "Red: newest IMU pose, yellow: lidar scan pose");
+        "Lightning-LM | Red: current pose, yellow: LiDAR scan pose");
     auto &font = pangolin::default_font();
     gltext_label_global_ = font.Text(global_text);
 }

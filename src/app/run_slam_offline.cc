@@ -1,81 +1,44 @@
-//
-// Created by xiang on 25-3-18.
-//
-
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-
-#include "core/system/slam.h"
-#include "ui/pangolin_window.h"
-#include "utils/timer.h"
-#include "wrapper/bag_io.h"
-#include "wrapper/ros_utils.h"
-
+#include <tbb/global_control.h>
 #include "io/yaml_io.h"
+#include "core/system/slam.h"
+#include "wrapper/bag_io.h"
 
-DEFINE_string(input_bag, "", "输入数据包");
-DEFINE_string(config, "./config/default.yaml", "配置文件");
+DEFINE_string(config, "config/m20_pro.yaml", "Sensor configuration YAML (M20 Pro or Mid360)");
+DEFINE_string(input_bag, "", "ROS 2 bag directory or SQLite .db3 file");
+DEFINE_string(map_path, "", "Map directory (localization defaults to system.map_path)");
 
-/// 运行一个LIO前端，带可视化
 int main(int argc, char** argv) {
     google::InitGoogleLogging(argv[0]);
     FLAGS_colorlogtostderr = true;
     FLAGS_stderrthreshold = google::INFO;
-
     google::ParseCommandLineFlags(&argc, &argv, true);
-    if (FLAGS_input_bag.empty()) {
-        LOG(ERROR) << "未指定输入数据";
-        return -1;
+    try {
+        tbb::global_control parallelism(tbb::global_control::max_allowed_parallelism, 4);
+        if (FLAGS_input_bag.empty()) { LOG(ERROR) << "Specify --input_bag"; return 1; }
+        lightning::YAML_IO yaml(FLAGS_config);
+        lightning::SlamSystem::Options options;
+        options.online_mode_ = false;
+        lightning::SlamSystem system(options);
+        if (!system.Init(FLAGS_config)) return 1;
+        system.StartSLAM("new_map");
+        lightning::RosbagIO bag(FLAGS_input_bag);
+        bag.AddImuHandle(yaml.GetValue<std::string>("common", "imu_topic"),
+            [&](lightning::IMUPtr imu) { system.ProcessIMU(imu); return true; });
+        if (yaml.GetValue<int>("fasterlio", "lidar_type") == 1) {
+            bag.AddLivoxCloudHandle(yaml.GetValue<std::string>("common", "livox_lidar_topic"),
+                [&](livox_ros_driver2::msg::CustomMsg::SharedPtr cloud) { system.ProcessLidar(cloud); return true; });
+        } else {
+            bag.AddPointCloud2Handle(yaml.GetValue<std::string>("common", "lidar_topic"),
+                [&](sensor_msgs::msg::PointCloud2::SharedPtr cloud) { system.ProcessLidar(cloud); return true; });
+        }
+        bag.Go();
+        if (!system.SaveMap(FLAGS_map_path)) return 1;
+        LOG(INFO) << "done";
+        return 0;
+    } catch (const std::exception& e) {
+        LOG(ERROR) << e.what();
+        return 1;
     }
-
-    using namespace lightning;
-
-    RosbagIO rosbag(FLAGS_input_bag);
-
-    SlamSystem::Options options;
-    options.online_mode_ = false;
-
-    SlamSystem slam(options);
-
-    /// 实时模式好像掉帧掉的比较厉害？
-
-    if (!slam.Init(FLAGS_config)) {
-        LOG(ERROR) << "failed to init slam";
-        return -1;
-    }
-
-    slam.StartSLAM("new_map");
-
-    lightning::YAML_IO yaml(FLAGS_config);
-    std::string lidar_topic = yaml.GetValue<std::string>("common", "lidar_topic");
-    std::string imu_topic = yaml.GetValue<std::string>("common", "imu_topic");
-
-    rosbag
-        /// IMU 的处理
-        .AddImuHandle(imu_topic,
-                      [&slam](IMUPtr imu) {
-                          slam.ProcessIMU(imu);
-                          return true;
-                      })
-
-        /// lidar 的处理
-        .AddPointCloud2Handle(lidar_topic,
-                              [&slam](sensor_msgs::msg::PointCloud2::SharedPtr msg) {
-                                  slam.ProcessLidar(msg);
-                                  return true;
-                              })
-        /// livox 的处理
-        .AddLivoxCloudHandle("/livox/lidar",
-                             [&slam](livox_ros_driver2::msg::CustomMsg::SharedPtr cloud) {
-                                 slam.ProcessLidar(cloud);
-                                 return true;
-                             })
-        .Go();
-
-    slam.SaveMap("");
-    Timer::PrintAll();
-
-    LOG(INFO) << "done";
-
-    return 0;
 }

@@ -1,3 +1,4 @@
+#include "utils/async_message_process.h"
 //
 // Created by xiang on 25-5-6.
 //
@@ -63,7 +64,7 @@ class SlamSystem {
     void StartSLAM(std::string map_name);
 
     /// 保存地图，默认保存至./data/地图名/ 下方
-    void SaveMap(const std::string& path = "");
+    bool SaveMap(const std::string& path = "");
 
     /// 处理IMU
     void ProcessIMU(const lightning::IMUPtr& imu);
@@ -79,8 +80,9 @@ class SlamSystem {
     /// ros端保存地图的实现
     void SaveMap(const SaveMapService::Request::SharedPtr request, SaveMapService::Response::SharedPtr response);
 
-    std::string diagnostics_dir_;
-    std::ofstream diagnostics_lio_;
+    void ProcessBufferedLidar(bool quiet_sync = false);
+    size_t lidar_messages_ = 0, imu_messages_ = 0;
+    AsyncMessageProcess<std::function<void()>> sensor_queue_;
     Options options_;
     std::atomic_bool running_ = false;
 

@@ -1,0 +1,36 @@
+[
+  {
+    "test": "dependency selection",
+    "distro": "foxy",
+    "passed": true,
+    "method": "stub dpkg-query; no package installation"
+  },
+  {
+    "test": "dependency selection",
+    "distro": "humble",
+    "passed": true,
+    "method": "stub dpkg-query; no package installation"
+  },
+  {
+    "test": "runtime distro selection and mixed-distro rejection",
+    "distro": "foxy",
+    "passed": true,
+    "method": "temporary generated-setup fixture"
+  },
+  {
+    "test": "runtime distro selection and mixed-distro rejection",
+    "distro": "humble",
+    "passed": true,
+    "method": "temporary generated-setup fixture"
+  },
+  {
+    "test": "missing distro rejection",
+    "script": "scripts/install_dep.sh",
+    "passed": true
+  },
+  {
+    "test": "missing distro rejection",
+    "script": "scripts/build.sh",
+    "passed": true
+  }
+]

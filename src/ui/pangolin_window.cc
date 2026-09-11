@@ -14,6 +14,7 @@ bool PangolinWindow::Init() {
     bool inited = impl_->Init();
     // 创建渲染线程
     if (inited) {
+        impl_->exit_flag_.store(false);
         impl_->render_thread_ = std::thread([this]() { impl_->Render(); });
     }
     return inited;

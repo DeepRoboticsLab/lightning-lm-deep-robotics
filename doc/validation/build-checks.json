@@ -1,0 +1,33 @@
+{
+  "clean_source_build": true,
+  "distro": "humble",
+  "ubuntu": "22.04",
+  "architecture": "x86_64",
+  "jobs": 20,
+  "source_directory": "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/mid360-source-check",
+  "build_log": "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/mid360-clean-build.log",
+  "build_log_sha256": "0a545182f116e732608ef57d0b85fac7aa9e122b5ff23509df697ff606ac3cea",
+  "all_runtime_sources_match_working_repository": true,
+  "runtime_source_files": 207,
+  "package_prefix": "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/mid360-source-check/install/lightning",
+  "executables": [
+    "lightning run_loc_offline",
+    "lightning run_loc_online",
+    "lightning run_slam_offline",
+    "lightning run_slam_online"
+  ],
+  "configuration_files": [
+    "fastdds.xml",
+    "m20_pro.yaml",
+    "mid360.yaml"
+  ],
+  "interfaces": [
+    "lightning/srv/SaveMap",
+    "livox_ros_driver2/msg/CustomMsg"
+  ],
+  "cli_help_uses_sensor_names": true,
+  "all_linked_libraries_resolve": true,
+  "uses_no_working_checkout_libraries": true,
+  "dependency_installer": "Passed; apt dependencies including pcl-tools were already installed",
+  "warning": "Existing workstation OpenCV links legacy libtbb.so.2 while parallel processing also uses libtbb.so.12; linker emitted a potential-conflict warning. Build and replay checks passed."
+}

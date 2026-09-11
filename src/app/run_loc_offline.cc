@@ -1,73 +1,47 @@
-//
-// Created by xiang on 25-3-18.
-//
-
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-
-#include "core/localization/localization.h"
-#include "ui/pangolin_window.h"
-#include "utils/timer.h"
-#include "wrapper/bag_io.h"
-#include "wrapper/ros_utils.h"
-
+#include <tbb/global_control.h>
 #include "io/yaml_io.h"
+#include "core/system/loc_system.h"
+#include "core/localization/localization.h"
+#include "wrapper/bag_io.h"
 
-DEFINE_string(input_bag, "", "输入数据包");
-DEFINE_string(config, "./config/default.yaml", "配置文件");
-DEFINE_string(map_path, "./data/new_map/", "地图路径");
+DEFINE_string(config, "config/m20_pro.yaml", "Sensor configuration YAML (M20 Pro or Mid360)");
+DEFINE_string(input_bag, "", "ROS 2 bag directory or SQLite .db3 file");
+DEFINE_string(map_path, "", "Map directory (localization defaults to system.map_path)");
+DEFINE_string(trajectory, "", "Optional output TUM trajectory file");
 
-/// 运行定位的测试
 int main(int argc, char** argv) {
     google::InitGoogleLogging(argv[0]);
     FLAGS_colorlogtostderr = true;
     FLAGS_stderrthreshold = google::INFO;
-
     google::ParseCommandLineFlags(&argc, &argv, true);
-    if (FLAGS_input_bag.empty()) {
-        LOG(ERROR) << "未指定输入数据";
-        return -1;
+    try {
+        tbb::global_control parallelism(tbb::global_control::max_allowed_parallelism, 4);
+        if (FLAGS_input_bag.empty()) { LOG(ERROR) << "Specify --input_bag"; return 1; }
+        lightning::YAML_IO yaml(FLAGS_config);
+        lightning::loc::Localization::Options options;
+        options.online_mode_ = false;
+        options.trajectory_path_ = FLAGS_trajectory;
+        lightning::loc::Localization system(options);
+        const auto map_path = FLAGS_map_path.empty() ? yaml.GetValue<std::string>("system", "map_path") : FLAGS_map_path;
+        if (!system.Init(FLAGS_config, map_path)) return 1;
+        lightning::RosbagIO bag(FLAGS_input_bag);
+        bag.AddImuHandle(yaml.GetValue<std::string>("common", "imu_topic"),
+            [&](lightning::IMUPtr imu) { system.ProcessIMUMsg(imu); return true; });
+        if (yaml.GetValue<int>("fasterlio", "lidar_type") == 1) {
+            bag.AddLivoxCloudHandle(yaml.GetValue<std::string>("common", "livox_lidar_topic"),
+                [&](livox_ros_driver2::msg::CustomMsg::SharedPtr cloud) { system.ProcessLivoxLidarMsg(cloud); return true; });
+        } else {
+            bag.AddPointCloud2Handle(yaml.GetValue<std::string>("common", "lidar_topic"),
+                [&](sensor_msgs::msg::PointCloud2::SharedPtr cloud) { system.ProcessLidarMsg(cloud); return true; });
+        }
+        bag.Go();
+        system.Finish();
+        LOG(INFO) << "done";
+        return 0;
+    } catch (const std::exception& e) {
+        LOG(ERROR) << e.what();
+        return 1;
     }
-
-    using namespace lightning;
-
-    RosbagIO rosbag(FLAGS_input_bag);
-
-    loc::Localization::Options options;
-    options.online_mode_ = false;
-
-    loc::Localization loc(options);
-    loc.Init(FLAGS_config, FLAGS_map_path);
-
-    lightning::YAML_IO yaml(FLAGS_config);
-    std::string lidar_topic = yaml.GetValue<std::string>("common", "lidar_topic");
-    std::string imu_topic = yaml.GetValue<std::string>("common", "imu_topic");
-
-    rosbag
-        .AddImuHandle(imu_topic,
-                      [&loc](IMUPtr imu) {
-                          loc.ProcessIMUMsg(imu);
-                          usleep(1000);
-                          return true;
-                      })
-        .AddPointCloud2Handle(lidar_topic,
-                              [&loc](sensor_msgs::msg::PointCloud2::SharedPtr cloud) {
-                                  loc.ProcessLidarMsg(cloud);
-                                  usleep(1000);
-                                  return true;
-                              })
-        .AddLivoxCloudHandle("/livox/lidar",
-                             [&loc](livox_ros_driver2::msg::CustomMsg::SharedPtr cloud) {
-                                 loc.ProcessLivoxLidarMsg(cloud);
-                                 usleep(1000);
-                                 return true;
-                             })
-        .Go();
-
-    Timer::PrintAll();
-    loc.Finish();
-
-    LOG(INFO) << "done";
-
-    return 0;
 }

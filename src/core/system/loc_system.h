@@ -1,3 +1,6 @@
+#include "utils/async_message_process.h"
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 //
 // Created by xiang on 25-9-8.
 //
@@ -25,6 +28,7 @@ class Localization;
 class LocSystem {
    public:
     struct Options {
+        std::string trajectory_path_;
         bool pub_tf_ = true;  // 是否发布tf
     };
 
@@ -32,7 +36,7 @@ class LocSystem {
     ~LocSystem();
 
     /// 初始化，地图路径在yaml里配置
-    bool Init(const std::string& yaml_path);
+    bool Init(const std::string& yaml_path, const std::string& map_path = "");
 
     /// 设置初始化位姿
     void SetInitPose(const SE3& pose);
@@ -48,6 +52,7 @@ class LocSystem {
     void Spin();
 
    private:
+    AsyncMessageProcess<std::function<void()>> sensor_queue_;
     Options options_;
 
     std::shared_ptr<loc::Localization> loc_ = nullptr;  // 定位接口
@@ -63,6 +68,8 @@ class LocSystem {
     std::string cloud_topic_;
     std::string livox_topic_;
 
+    rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_sub_;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
     rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_ = nullptr;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_sub_ = nullptr;
     rclcpp::Subscription<livox_ros_driver2::msg::CustomMsg>::SharedPtr livox_sub_ = nullptr;

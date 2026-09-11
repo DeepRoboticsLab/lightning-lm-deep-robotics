@@ -6,7 +6,7 @@
 #include "common/imu.h"
 #include "core/lio/laser_mapping.h"
 #include "core/localization/localization_result.h"
-#include "core/system/async_message_process.h"
+#include <fstream>
 
 /// 预声明
 namespace lightning {
@@ -27,22 +27,19 @@ class Localization {
     struct Options {
         Options() {}
 
+        std::string trajectory_path_;
         bool online_mode_ = false;  // 在线模式还是离线模式
         bool with_ui_ = false;      // 是否带ui
 
         /// 参数
         SE3 T_body_lidar_;
 
-        bool enable_lidar_odom_skip_ = false;  // 是否允许激光里程计跳帧
-        int lidar_odom_skip_num_ = 1;          // 如果允许跳帧，跳多少帧
-        bool enable_lidar_loc_skip_ = true;    // 是否允许激光定位跳帧
-        bool enable_lidar_loc_rviz_ = false;   // 是否允许调试用rviz
-        int lidar_loc_skip_num_ = 4;           // 如果允许跳帧，跳多少帧
         bool loc_on_kf_ = false;
+        double max_frequency_ = 5.0;
     };
 
     Localization(Options options = Options());
-    ~Localization() = default;
+    ~Localization() { Finish(); }
 
     /**
      * 初始化，读配置参数
@@ -72,7 +69,6 @@ class Localization {
     void Finish();
 
     /// 异步处理函数
-    void LidarOdomProcCloud(CloudPtr);
     void LidarLocProcCloud(CloudPtr);
 
     using TFCallback = std::function<void(const geometry_msgs::msg::TransformStamped& odom)>;
@@ -90,11 +86,13 @@ class Localization {
 
    private:
     /// 模块  ========================================================================================================
+    void ProcessBufferedLidar(bool quiet_sync = false);
+    size_t lidar_messages_ = 0, imu_messages_ = 0;
+    std::ofstream trajectory_;
+    size_t match_count_ = 0, valid_match_count_ = 0;
+    bool finished_ = false;
     std::mutex global_mutex_;  // 防止处理过程中被重复init
     Options options_;
-
-    /// 预处理
-    std::shared_ptr<PointCloudPreprocess> preprocess_ = nullptr;  // point cloud preprocess
 
     /// 前端
     std::shared_ptr<LaserMapping> lio_ = nullptr;
@@ -110,8 +108,6 @@ class Localization {
     std::shared_ptr<LidarLoc> lidar_loc_;
 
     /// TODO async 处理
-    sys::AsyncMessageProcess<CloudPtr> lidar_odom_proc_cloud_;  // lidar odom 处理点云
-    sys::AsyncMessageProcess<CloudPtr> lidar_loc_proc_cloud_;   // lidar loc 处理点云
 
     /// 结果数据 =====================================================================================================
     LocalizationResult loc_result_;
@@ -126,6 +122,7 @@ class Localization {
     double last_imu_time_ = 0;
     double last_odom_time_ = 0;
     double last_cloud_time_ = 0;
+    double last_match_time_ = -1;
 };
 }  // namespace loc
 

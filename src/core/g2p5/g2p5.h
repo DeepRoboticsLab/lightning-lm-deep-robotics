@@ -8,7 +8,7 @@
 #include "common/eigen_types.h"
 #include "common/keyframe.h"
 #include "core/g2p5/g2p5_map.h"
-#include "core/system/async_message_process.h"
+#include "utils/async_message_process.h"
 
 #include <thread>
 
@@ -130,7 +130,7 @@ class G2P5 {
     std::mutex frontend_mutex_;                                         // 前端锁
     G2P5MapPtr frontend_map_ = nullptr;                                 // 前端最新绘制的地图
     Keyframe::Ptr frontend_current_ = nullptr;                          // 前端正在绘制的关键帧
-    sys::AsyncMessageProcess<Keyframe::Ptr> draw_frontend_map_thread_;  // 前端绘制地图的线程
+    AsyncMessageProcess<Keyframe::Ptr> draw_frontend_map_thread_;  // 前端绘制地图的线程
 
     /// 后端相关
     std::thread draw_backend_map_thread_;           // 后端重绘的线程

@@ -94,6 +94,7 @@ class PangolinWindowImpl {
     Sophus::SE3d T_imu_lidar_;
     int max_size_of_current_scan_ = 200;  // 当前扫描数据保留多少个
     std::vector<std::shared_ptr<Keyframe>> all_keyframes_;
+    std::vector<std::shared_ptr<UiCloud>> keyframe_clouds_;
 
     //////////////////////////////// 以下和render相关 ///////////////////////////
    private:

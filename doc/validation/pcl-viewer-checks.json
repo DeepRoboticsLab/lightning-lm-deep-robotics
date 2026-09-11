@@ -1,0 +1,229 @@
+{
+  "checks": [
+    {
+      "mode": "slam_offline",
+      "dataset": "office",
+      "command": [
+        "pcl_viewer",
+        "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/final-verified/slam_offline/office/map/global.pcd",
+        "-ps",
+        "2"
+      ],
+      "rendered": true,
+      "nonbackground_pixels": 29468,
+      "pcd_unchanged": true,
+      "pcd_sha256": "1ed27269d7cc8e75f73556c4106ad4bf70ccded0251d40bcbe4a04016e87e39f",
+      "capture": "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/saved-map-viewer-check/slam_offline-office.png",
+      "termination": "test harness SIGTERM after rendering check"
+    },
+    {
+      "mode": "slam_offline",
+      "dataset": "libraryf",
+      "command": [
+        "pcl_viewer",
+        "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/final-verified/slam_offline/libraryf/map/global.pcd",
+        "-ps",
+        "2"
+      ],
+      "rendered": true,
+      "nonbackground_pixels": 18193,
+      "pcd_unchanged": true,
+      "pcd_sha256": "ca27c84eba8b8a23e1d9af85e16916199e1c86f42382513d52a54a00631fad3b",
+      "capture": "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/saved-map-viewer-check/slam_offline-libraryf.png",
+      "termination": "test harness SIGTERM after rendering check"
+    },
+    {
+      "mode": "slam_offline",
+      "dataset": "building1",
+      "command": [
+        "pcl_viewer",
+        "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/final-verified/slam_offline/building1/map/global.pcd",
+        "-ps",
+        "2"
+      ],
+      "rendered": true,
+      "nonbackground_pixels": 27649,
+      "pcd_unchanged": true,
+      "pcd_sha256": "8989a55c4a3254f4b638acfcaed88689fc55fc5b571f4699d28ca75886de49f4",
+      "capture": "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/saved-map-viewer-check/slam_offline-building1.png",
+      "termination": "test harness SIGTERM after rendering check"
+    },
+    {
+      "mode": "slam_offline",
+      "dataset": "building2",
+      "command": [
+        "pcl_viewer",
+        "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/final-verified/slam_offline/building2/map/global.pcd",
+        "-ps",
+        "2"
+      ],
+      "rendered": true,
+      "nonbackground_pixels": 25005,
+      "pcd_unchanged": true,
+      "pcd_sha256": "0102efbb06332334295b9883f77531765785c421b017486d65f64ec0387eee51",
+      "capture": "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/saved-map-viewer-check/slam_offline-building2.png",
+      "termination": "test harness SIGTERM after rendering check"
+    },
+    {
+      "mode": "slam_offline",
+      "dataset": "building3",
+      "command": [
+        "pcl_viewer",
+        "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/final-verified/slam_offline/building3/map/global.pcd",
+        "-ps",
+        "2"
+      ],
+      "rendered": true,
+      "nonbackground_pixels": 23654,
+      "pcd_unchanged": true,
+      "pcd_sha256": "16fe9eef9582003c5bd1d26091852a3cb9fab204d21860a8f0a27ac3874e908d",
+      "capture": "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/saved-map-viewer-check/slam_offline-building3.png",
+      "termination": "test harness SIGTERM after rendering check"
+    },
+    {
+      "mode": "slam_offline",
+      "dataset": "grass2",
+      "command": [
+        "pcl_viewer",
+        "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/final-verified/slam_offline/grass2/map/global.pcd",
+        "-ps",
+        "2"
+      ],
+      "rendered": true,
+      "nonbackground_pixels": 26410,
+      "pcd_unchanged": true,
+      "pcd_sha256": "7213940f8dfb30884db62f3b335807d0475dbde0eac93a377b44a563f5123f51",
+      "capture": "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/saved-map-viewer-check/slam_offline-grass2.png",
+      "termination": "test harness SIGTERM after rendering check"
+    },
+    {
+      "mode": "slam_offline",
+      "dataset": "road1",
+      "command": [
+        "pcl_viewer",
+        "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/final-verified/slam_offline/road1/map/global.pcd",
+        "-ps",
+        "2"
+      ],
+      "rendered": true,
+      "nonbackground_pixels": 42231,
+      "pcd_unchanged": true,
+      "pcd_sha256": "2e80ec1f4b12c34ec93a68e10e68a121b910c1c465c8741696b0d442ac738528",
+      "capture": "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/saved-map-viewer-check/slam_offline-road1.png",
+      "termination": "test harness SIGTERM after rendering check"
+    },
+    {
+      "mode": "slam_online",
+      "dataset": "office",
+      "command": [
+        "pcl_viewer",
+        "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/final-verified/slam_online/office/data/online_map/global.pcd",
+        "-ps",
+        "2"
+      ],
+      "rendered": true,
+      "nonbackground_pixels": 29727,
+      "pcd_unchanged": true,
+      "pcd_sha256": "2b30e8ab689f2f09331b3e553a59952f1dcc883636caebfae6de145b783cfe04",
+      "capture": "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/saved-map-viewer-check/slam_online-office.png",
+      "termination": "test harness SIGTERM after rendering check"
+    },
+    {
+      "mode": "slam_online",
+      "dataset": "libraryf",
+      "command": [
+        "pcl_viewer",
+        "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/final-verified/slam_online/libraryf/data/online_map/global.pcd",
+        "-ps",
+        "2"
+      ],
+      "rendered": true,
+      "nonbackground_pixels": 20167,
+      "pcd_unchanged": true,
+      "pcd_sha256": "4c6db042d90de2cca8e8ba817441fb1e50b1a5e737bc8c50621615b4f206fa0a",
+      "capture": "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/saved-map-viewer-check/slam_online-libraryf.png",
+      "termination": "test harness SIGTERM after rendering check"
+    },
+    {
+      "mode": "slam_online",
+      "dataset": "building1",
+      "command": [
+        "pcl_viewer",
+        "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/final-verified/slam_online/building1/data/online_map/global.pcd",
+        "-ps",
+        "2"
+      ],
+      "rendered": true,
+      "nonbackground_pixels": 27908,
+      "pcd_unchanged": true,
+      "pcd_sha256": "5df11013ab64462383234cdfd4cc273e9d7bc8ed6d0ffd576d3f7ee6423bf6cd",
+      "capture": "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/saved-map-viewer-check/slam_online-building1.png",
+      "termination": "test harness SIGTERM after rendering check"
+    },
+    {
+      "mode": "slam_online",
+      "dataset": "building2",
+      "command": [
+        "pcl_viewer",
+        "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/final-verified/slam_online/building2/data/online_map/global.pcd",
+        "-ps",
+        "2"
+      ],
+      "rendered": true,
+      "nonbackground_pixels": 24634,
+      "pcd_unchanged": true,
+      "pcd_sha256": "db651328fbd026adf1ff60ddaee8738eb8b6f240efbfa8b8598a0184de27f7b5",
+      "capture": "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/saved-map-viewer-check/slam_online-building2.png",
+      "termination": "test harness SIGTERM after rendering check"
+    },
+    {
+      "mode": "slam_online",
+      "dataset": "building3",
+      "command": [
+        "pcl_viewer",
+        "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/final-verified/slam_online/building3/data/online_map/global.pcd",
+        "-ps",
+        "2"
+      ],
+      "rendered": true,
+      "nonbackground_pixels": 24015,
+      "pcd_unchanged": true,
+      "pcd_sha256": "6fed5cf1b347ec4c0ac00739434d7efc4446d19aaa4fab280d5757b9e80b4417",
+      "capture": "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/saved-map-viewer-check/slam_online-building3.png",
+      "termination": "test harness SIGTERM after rendering check"
+    },
+    {
+      "mode": "slam_online",
+      "dataset": "grass2",
+      "command": [
+        "pcl_viewer",
+        "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/final-verified/slam_online/grass2/data/online_map/global.pcd",
+        "-ps",
+        "2"
+      ],
+      "rendered": true,
+      "nonbackground_pixels": 26953,
+      "pcd_unchanged": true,
+      "pcd_sha256": "3895ef8048ec0020daba1cb72ab4f215a3903ecdfa08bae677c072ca8df53665",
+      "capture": "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/saved-map-viewer-check/slam_online-grass2.png",
+      "termination": "test harness SIGTERM after rendering check"
+    },
+    {
+      "mode": "slam_online",
+      "dataset": "road1",
+      "command": [
+        "pcl_viewer",
+        "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/final-verified/slam_online/road1/data/online_map/global.pcd",
+        "-ps",
+        "2"
+      ],
+      "rendered": true,
+      "nonbackground_pixels": 42790,
+      "pcd_unchanged": true,
+      "pcd_sha256": "83dc0d1c433f576c7f8e99ede71ab92309cb53c08cec39f2e37259d775253da3",
+      "capture": "/home/ubuntu/deep-robotics/reconstruction-evaluation/publish-validation/saved-map-viewer-check/slam_online-road1.png",
+      "termination": "test harness SIGTERM after rendering check"
+    }
+  ],
+  "passed": true
+}

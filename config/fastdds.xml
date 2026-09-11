@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>lidar_shm</transport_id>
+      <type>SHM</type>
+      <segment_size>67108864</segment_size>
+      <maxMessageSize>8388608</maxMessageSize>
+      <port_queue_capacity>4096</port_queue_capacity>
+    </transport_descriptor>
+    <transport_descriptor>
+      <transport_id>lidar_udp</transport_id>
+      <type>UDPv4</type>
+      <sendBufferSize>4194304</sendBufferSize>
+      <receiveBufferSize>4194304</receiveBufferSize>
+    </transport_descriptor>
+  </transport_descriptors>
+  <participant profile_name="lightning_transport" is_default_profile="true">
+    <rtps>
+      <userTransports>
+        <transport_id>lidar_shm</transport_id>
+        <transport_id>lidar_udp</transport_id>
+      </userTransports>
+      <useBuiltinTransports>false</useBuiltinTransports>
+    </rtps>
+  </participant>
+</profiles>

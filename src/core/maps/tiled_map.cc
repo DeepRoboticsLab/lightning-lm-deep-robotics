@@ -277,7 +277,6 @@ void TiledMap::LoadOnPose(const SE3& pose) {
     Vec2d p = pose.translation().head<2>();
     auto this_grid = Pos2Grid(p);
     if (last_load_grid_set_ && last_load_grid_ == this_grid) {
-        map_updated_ = false;
         return;
     }
 
@@ -326,7 +325,7 @@ void TiledMap::LoadOnPose(const SE3& pose) {
         if (n > options_.unload_map_size_) {
             /// 卸载静态地图
             map_updated_ = true;
-            // static_chunks_[g]->Unload();
+            static_chunks_[g]->Unload();
             iter = loaded_chunks_.erase(iter);
 
             auto d = dynamic_chunks_.find(g);

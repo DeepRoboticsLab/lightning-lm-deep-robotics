@@ -40,12 +40,14 @@ class UiCloud {
    private:
     Vec4f IntensityToRgbPCL(const float& intensity) const {
         int index = int(intensity * 3);
-        index = index % intensity_color_table_pcl_.size();
+        const int size = static_cast<int>(intensity_color_table_pcl_.size());
+        index = (index % size + size) % size;
         return intensity_color_table_pcl_[index];
     }
 
     UseColor use_color_ = UseColor::PCL_COLOR;
     Vec4f custom_color_ = Vec4f::Zero();
+    float rendered_opacity_ = -1.0f;
 
     std::vector<Vec3f> xyz_data_;              // 点的世界坐标
     std::vector<Vec4f> color_data_pcl_;        // 根据intensity映射得到的颜色

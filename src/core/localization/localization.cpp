@@ -51,36 +51,23 @@ bool Localization::Init(const std::string& yaml_path, const std::string& global_
         // lio_->SetUI(ui_);
     }
 
-    lidar_loc_->Init(yaml_path);
+    if (!lidar_loc_->Init(yaml_path)) return false;
+    if (!options_.trajectory_path_.empty()) {
+        trajectory_.open(options_.trajectory_path_);
+        if (!trajectory_) { LOG(ERROR) << "Cannot open trajectory file"; return false; }
+        trajectory_ << std::setprecision(17);
+    }
 
     /// pose graph
     pgo_ = std::make_shared<PGO>();
     pgo_->SetDebug(false);
 
     ///  各模块的异步调用
-    options_.enable_lidar_loc_skip_ = yaml.GetValue<bool>("system", "enable_lidar_loc_skip");
-    options_.enable_lidar_loc_rviz_ = yaml.GetValue<bool>("system", "enable_lidar_loc_rviz");
-    options_.lidar_loc_skip_num_ = yaml.GetValue<int>("system", "lidar_loc_skip_num");
-    options_.enable_lidar_odom_skip_ = yaml.GetValue<bool>("system", "enable_lidar_odom_skip");
-    options_.lidar_odom_skip_num_ = yaml.GetValue<int>("system", "lidar_odom_skip_num");
     options_.loc_on_kf_ = yaml.GetValue<bool>("lidar_loc", "loc_on_kf");
-
-    lidar_odom_proc_cloud_.SetMaxSize(1);
-    lidar_loc_proc_cloud_.SetMaxSize(1);
-
-    lidar_odom_proc_cloud_.SetName("激光里程计");
-    lidar_loc_proc_cloud_.SetName("激光定位");
-
-    // 允许跳帧
-    lidar_loc_proc_cloud_.SetSkipParam(options_.enable_lidar_loc_skip_, options_.lidar_loc_skip_num_);
-    lidar_odom_proc_cloud_.SetSkipParam(options_.enable_lidar_odom_skip_, options_.lidar_odom_skip_num_);
-
-    lidar_odom_proc_cloud_.SetProcFunc([this](CloudPtr cloud) { LidarOdomProcCloud(cloud); });
-    lidar_loc_proc_cloud_.SetProcFunc([this](CloudPtr cloud) { LidarLocProcCloud(cloud); });
-
-    if (options_.online_mode_) {
-        lidar_odom_proc_cloud_.Start();
-        lidar_loc_proc_cloud_.Start();
+    options_.max_frequency_ = YAML::LoadFile(yaml_path)["lidar_loc"]["max_frequency"].as<double>(5.0);
+    if (!std::isfinite(options_.max_frequency_) || options_.max_frequency_ <= 0) {
+        LOG(ERROR) << "lidar_loc.max_frequency must be positive";
+        return false;
     }
 
     /// TODO: 发布
@@ -102,28 +89,6 @@ bool Localization::Init(const std::string& yaml_path, const std::string& global_
         }
     });
 
-    /// 预处理器
-    preprocess_.reset(new PointCloudPreprocess());
-    preprocess_->Blind() = yaml.GetValue<double>("fasterlio", "blind");
-    preprocess_->TimeScale() = yaml.GetValue<double>("fasterlio", "time_scale");
-    int lidar_type = yaml.GetValue<int>("fasterlio", "lidar_type");
-    preprocess_->NumScans() = yaml.GetValue<int>("fasterlio", "scan_line");
-    preprocess_->PointFilterNum() = yaml.GetValue<int>("fasterlio", "point_filter_num");
-
-    LOG(INFO) << "lidar_type " << lidar_type;
-    if (lidar_type == 1) {
-        preprocess_->SetLidarType(LidarType::AVIA);
-        LOG(INFO) << "Using AVIA Lidar";
-    } else if (lidar_type == 2) {
-        preprocess_->SetLidarType(LidarType::VELO32);
-        LOG(INFO) << "Using Velodyne 32 Lidar";
-    } else if (lidar_type == 3) {
-        preprocess_->SetLidarType(LidarType::OUST64);
-        LOG(INFO) << "Using OUST 64 Lidar";
-    } else {
-        LOG(WARNING) << "unknown lidar_type";
-    }
-
     return true;
 }
 
@@ -133,16 +98,10 @@ void Localization::ProcessLidarMsg(const sensor_msgs::msg::PointCloud2::SharedPt
         return;
     }
 
-    // 串行模式
-    CloudPtr laser_cloud(new PointCloudType);
-    preprocess_->Process(cloud, laser_cloud);
-    laser_cloud->header.stamp = cloud->header.stamp.sec * 1e9 + cloud->header.stamp.nanosec;
-
-    if (options_.online_mode_) {
-        lidar_odom_proc_cloud_.AddMessage(laser_cloud);
-    } else {
-        LidarOdomProcCloud(laser_cloud);
-    }
+    ++lidar_messages_;
+    // Use exactly the same preprocessing and time buffering as mapping.
+    lio_->ProcessPointCloud2(cloud);
+    ProcessBufferedLidar();
 }
 
 void Localization::ProcessLivoxLidarMsg(const livox_ros_driver2::msg::CustomMsg::SharedPtr cloud) {
@@ -151,26 +110,13 @@ void Localization::ProcessLivoxLidarMsg(const livox_ros_driver2::msg::CustomMsg:
         return;
     }
 
-    // 串行模式
-    CloudPtr laser_cloud(new PointCloudType);
-    preprocess_->Process(cloud, laser_cloud);
-    laser_cloud->header.stamp = cloud->header.stamp.sec * 1e9 + cloud->header.stamp.nanosec;
-
-    if (options_.online_mode_) {
-        lidar_odom_proc_cloud_.AddMessage(laser_cloud);
-    } else {
-        LidarOdomProcCloud(laser_cloud);
-    }
+    ++lidar_messages_;
+    lio_->ProcessPointCloud2(cloud);
+    ProcessBufferedLidar();
 }
 
-void Localization::LidarOdomProcCloud(CloudPtr cloud) {
-    if (lio_ == nullptr) {
-        return;
-    }
-
-    /// NOTE: 在NCLT这种数据集中，lio内部是有缓存的，它拿到的点云不一定是最新时刻的点云
-    lio_->ProcessPointCloud2(cloud);
-    if (!lio_->Run()) {
+void Localization::ProcessBufferedLidar(bool quiet_sync) {
+    if (!lio_->Run(quiet_sync)) {
         return;
     }
 
@@ -178,6 +124,10 @@ void Localization::LidarOdomProcCloud(CloudPtr cloud) {
 
     lidar_loc_->ProcessLO(lo_state);
     pgo_->ProcessLidarOdom(lo_state);
+
+    // Keep odometry at sensor rate; bound only the more expensive map match.
+    if (last_match_time_ >= 0 && lo_state.timestamp_ >= last_match_time_ &&
+        lo_state.timestamp_ - last_match_time_ < 1.0 / options_.max_frequency_ - 1e-3) return;
 
     // LOG(INFO) << "LO pose: " << std::setprecision(12) << lo_state.timestamp_ << " "
     //           << lo_state.GetPose().translation().transpose();
@@ -198,26 +148,30 @@ void Localization::LidarOdomProcCloud(CloudPtr cloud) {
 
         auto scan = lio_->GetScanUndist();
 
-        if (options_.online_mode_) {
-            lidar_loc_proc_cloud_.AddMessage(scan);
-        } else {
-            LidarLocProcCloud(scan);
-        }
+        LidarLocProcCloud(scan);
     } else {
         auto scan = lio_->GetScanUndist();
 
-        if (options_.online_mode_) {
-            lidar_loc_proc_cloud_.AddMessage(scan);
-        } else {
-            LidarLocProcCloud(scan);
-        }
+        LidarLocProcCloud(scan);
     }
 }
 
 void Localization::LidarLocProcCloud(CloudPtr scan_undist) {
-    lidar_loc_->ProcessCloud(scan_undist);
+    last_match_time_ = lio_->GetState().timestamp_;
+    lidar_loc_->ProcessCloud(scan_undist, lio_->GetState().timestamp_);
 
     auto res = lidar_loc_->GetLocalizationResult();
+    LOG(INFO) << "Localization match: valid=" << res.lidar_loc_valid_ << ", confidence=" << res.confidence_;
+    ++match_count_;
+    if (res.lidar_loc_valid_) {
+        ++valid_match_count_;
+        if (trajectory_) {
+            const auto t = res.pose_.translation();
+            const auto q = res.pose_.unit_quaternion();
+            trajectory_ << res.timestamp_ << ' ' << t.x() << ' ' << t.y() << ' ' << t.z()
+                        << ' ' << q.x() << ' ' << q.y() << ' ' << q.z() << ' ' << q.w() << '\n';
+        }
+    }
     pgo_->ProcessLidarLoc(res);
 
     if (ui_) {
@@ -247,7 +201,9 @@ void Localization::ProcessIMUMsg(IMUPtr imu) {
     last_imu_time_ = this_imu_time;
 
     /// 里程计处理IMU
+    ++imu_messages_;
     lio_->ProcessIMU(imu);
+    if (options_.online_mode_) ProcessBufferedLidar(true);
 
     /// 这里需要 IMU predict，否则没法process DR了
     auto dr_state = lio_->GetIMUState();
@@ -308,13 +264,13 @@ void Localization::ProcessIMUMsg(IMUPtr imu) {
 // }
 
 void Localization::Finish() {
-    lidar_loc_->Finish();
-    if (ui_) {
-        ui_->Quit();
-    }
-
-    lidar_loc_proc_cloud_.Quit();
-    lidar_odom_proc_cloud_.Quit();
+    if (finished_) return;
+    finished_ = true;
+    if (lidar_loc_) lidar_loc_->Finish();
+    if (ui_) ui_->Quit();
+    trajectory_.close();
+    LOG(INFO) << "Localization complete: matches=" << match_count_ << ", valid=" << valid_match_count_
+              << ", lidar=" << lidar_messages_ << ", imu=" << imu_messages_;
 }
 
 void Localization::SetExternalPose(const Eigen::Quaterniond& q, const Eigen::Vector3d& t) {
@@ -322,6 +278,7 @@ void Localization::SetExternalPose(const Eigen::Quaterniond& q, const Eigen::Vec
     /// 设置外部重定位的pose
     if (lidar_loc_) {
         lidar_loc_->SetInitialPose(SE3(q, t));
+        last_match_time_ = -1;
     }
 }
 

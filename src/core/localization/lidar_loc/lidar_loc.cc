@@ -24,14 +24,16 @@ LidarLoc::LidarLoc(LidarLoc::Options options) : options_(options) {
     pcl_ndt_->setResolution(1.0);
     pcl_ndt_->setNeighborhoodSearchMethod(pclomp::DIRECT7);
     pcl_ndt_->setStepSize(0.1);
-    pcl_ndt_->setMaximumIterations(4);
+    pcl_ndt_->setTransformationEpsilon(0.01);
+    pcl_ndt_->setMaximumIterations(20);
     pcl_ndt_->setNumThreads(4);
 
     pcl_ndt_rough_.reset(new NDTType());
     pcl_ndt_rough_->setResolution(5.0);
     pcl_ndt_rough_->setNeighborhoodSearchMethod(pclomp::DIRECT7);
-    pcl_ndt_rough_->setStepSize(0.1);
-    pcl_ndt_rough_->setMaximumIterations(4);
+    pcl_ndt_rough_->setStepSize(0.5);
+    pcl_ndt_rough_->setTransformationEpsilon(0.05);
+    pcl_ndt_rough_->setMaximumIterations(20);
     pcl_ndt_rough_->setNumThreads(4);
 
     pcl_icp_.reset(new ICPType());
@@ -43,11 +45,6 @@ LidarLoc::LidarLoc(LidarLoc::Options options) : options_(options) {
 }
 
 LidarLoc::~LidarLoc() {
-    if (update_map_thread_.joinable()) {
-        update_map_quit_ = true;
-        update_map_thread_.join();
-    }
-
     recover_pose_out_.close();
 }
 
@@ -61,6 +58,9 @@ bool LidarLoc::Init(const std::string& config_path) {
     options_.update_kf_dis_ = yaml.GetValue<double>("lidar_loc", "update_kf_dis");
     options_.update_lidar_loc_score_ = yaml.GetValue<double>("lidar_loc", "update_lidar_loc_score");
     options_.min_init_confidence_ = yaml.GetValue<float>("lidar_loc", "min_init_confidence");
+    options_.min_tracking_confidence_ =
+        YAML::LoadFile(config_path)["lidar_loc"]["min_tracking_confidence"].as<float>(1.0);
+    options_.scan_voxel_size_ = yaml.GetValue<float>("fasterlio", "filter_size_scan");
 
     options_.filter_z_min_ = yaml.GetValue<double>("lidar_loc", "filter_z_min");
     options_.filter_z_max_ = yaml.GetValue<double>("lidar_loc", "filter_z_max");
@@ -94,13 +94,13 @@ bool LidarLoc::Init(const std::string& config_path) {
     options_.map_option_.save_dyn_when_unload_ = yaml.GetValue<bool>("maps", "save_dyn_when_unload");
 
     map_ = std::make_shared<TiledMap>(options_.map_option_);
-    map_->LoadMapIndex();
+    if (!map_->LoadMapIndex()) return false;
 
     auto fps = map_->GetAllFP();
     if (!fps.empty()) {
         map_->LoadOnPose(fps.front().pose_);
         /// 更新一次地图，保证有初始数据
-        UpdateGlobalMap();
+        RefreshMap();
     }
 
     /// load recover pose if exist
@@ -118,30 +118,38 @@ bool LidarLoc::Init(const std::string& config_path) {
         map_->AddFP(fp_recover);
     }
 
-    update_map_thread_ = std::thread([this]() { LidarLoc::UpdateMapThread(); });
-
     return true;
 }
 
-bool LidarLoc::ProcessCloud(CloudPtr cloud_input) {
+bool LidarLoc::ProcessCloud(CloudPtr cloud_input, double scan_end_time) {
     assert(cloud_input != nullptr);
 
     if (cloud_input->empty() || cloud_input->size() < 50) {
         LOG(WARNING) << "loc input is empty or invalid, sz: " << cloud_input->size();
+        UL lock(result_mutex_);
+        localization_result_.timestamp_ = scan_end_time;
+        localization_result_.confidence_ = 0;
+        localization_result_.lidar_loc_valid_ = false;
+        localization_result_.status_ = LocalizationStatus::FAIL;
         return false;
     }
 
-    // CloudPtr cloud(new PointCloudType);
-    // pcl::VoxelGrid<PointType> voxel;
-
-    // float sz = 0.1;
-    // voxel.setLeafSize(sz, sz, sz);
-    // voxel.setInputCloud(cloud_input);
-    // voxel.filter(*cloud);
-
-    current_scan_ = cloud_input;
-
-    Align(cloud_input);
+    CloudPtr cloud(new PointCloudType);
+    pcl::VoxelGrid<PointType> voxel;
+    const float size = options_.scan_voxel_size_;
+    voxel.setLeafSize(size, size, size);
+    voxel.setInputCloud(cloud_input);
+    voxel.filter(*cloud);
+    if (cloud->size() < 50) {
+        UL lock(result_mutex_);
+        localization_result_.timestamp_ = scan_end_time;
+        localization_result_.confidence_ = 0;
+        localization_result_.lidar_loc_valid_ = false;
+        localization_result_.status_ = LocalizationStatus::FAIL;
+        return false;
+    }
+    current_scan_ = cloud;
+    Align(cloud, scan_end_time);
     return true;
 }
 
@@ -283,15 +291,29 @@ bool LidarLoc::YawSearch(SE3& pose, double& confidence, CloudPtr input, CloudPtr
 
 bool LidarLoc::InitWithFP(CloudPtr input, const SE3& fp_pose) {
     assert(input != nullptr && !input->empty());
+    map_->LoadOnPose(fp_pose);
+    RefreshMap(true);
 
     // 使用功能点的位置进行定位初始化
-    double fitness_score;
+    double fitness_score = 0;
     SE3 pose_esti = fp_pose;
     CloudPtr output_cloud(new PointCloudType);
-    loc_inited_ = YawSearch(pose_esti, fitness_score, input, output_cloud);
+    // Prefer the supplied pose when fine registration supports it. A broad
+    // yaw search can select a different, ambiguous part of a corridor.
+    loc_inited_ = Localize(pose_esti, fitness_score, input, output_cloud);
+    if (!loc_inited_) {
+        // Let the first sparse scans pass before an expensive global yaw search.
+        // Retry fine registration on each scan; bound broad searches in sensor time.
+        if (last_yaw_search_time_ < 0) last_yaw_search_time_ = current_timestamp_;
+        if (current_timestamp_ - last_yaw_search_time_ >= 2.0) {
+            last_yaw_search_time_ = current_timestamp_;
+            pose_esti = fp_pose;
+            loc_inited_ = YawSearch(pose_esti, fitness_score, input, output_cloud);
+        }
+    }
 
     if (loc_inited_) {
-        current_timestamp_ = math::ToSec(input->header.stamp);
+        LOG(INFO) << "localization init success, confidence: " << fitness_score;
         localization_result_.confidence_ = fitness_score;
         current_abs_pose_ = pose_esti;
         localization_result_.pose_ = pose_esti;
@@ -322,7 +344,7 @@ bool LidarLoc::InitWithFP(CloudPtr input, const SE3& fp_pose) {
         // 添加失败历史记录
         LOG(INFO) << "init failed, score: " << fitness_score;
         fp_init_fail_pose_vec_.emplace_back(fp_pose);
-        fp_last_tried_time_ = 1e-6 * static_cast<double>(input->header.stamp);
+        fp_last_tried_time_ = current_timestamp_;
     }
     return loc_inited_;
 }
@@ -364,7 +386,8 @@ bool LidarLoc::UpdateGlobalMap() {
     ndt->setResolution(1.0);
     ndt->setNeighborhoodSearchMethod(pclomp::DIRECT7);
     ndt->setStepSize(0.1);
-    ndt->setMaximumIterations(4);
+    ndt->setTransformationEpsilon(0.01);
+    ndt->setMaximumIterations(20);
     ndt->setNumThreads(4);
 
     map_->SetNewTargetForNDT(ndt);
@@ -373,12 +396,13 @@ bool LidarLoc::UpdateGlobalMap() {
     UL lock(match_mutex_);
     pcl_ndt_ = ndt;
 
-    if (!loc_inited_) {
+    {
         NDTType::Ptr ndt_rough(new NDTType());
         ndt_rough->setResolution(5.0);
         ndt_rough->setNeighborhoodSearchMethod(pclomp::DIRECT7);
-        ndt_rough->setStepSize(0.1);
-        ndt_rough->setMaximumIterations(4);
+        ndt_rough->setStepSize(0.5);
+        ndt_rough->setTransformationEpsilon(0.05);
+        ndt_rough->setMaximumIterations(20);
         ndt_rough->setNumThreads(4);
 
         map_->SetNewTargetForNDT(ndt_rough);
@@ -404,26 +428,23 @@ bool LidarLoc::UpdateGlobalMap() {
     return true;
 }
 
-void LidarLoc::UpdateMapThread() {
-    LOG(INFO) << "UpdateMapThread thread is running";
-    while (!update_map_quit_) {
-        if (map_->MapUpdated() || map_->DynamicMapUpdated()) {
-            UpdateGlobalMap();
-
-            if (ui_) {
-                ui_->UpdatePointCloudGlobal(map_->GetStaticCloud());
-                ui_->UpdatePointCloudDynamic(map_->GetDynamicCloud());
-            }
-
-            map_->CleanMapUpdate();
+void LidarLoc::RefreshMap(bool force) {
+    // Finish rebuilding the NDT target before matching against newly loaded tiles.
+    // A background refresh can lag behind fast replay or lose its dirty flag.
+    if (force || map_->MapUpdated() || map_->DynamicMapUpdated()) {
+        UpdateGlobalMap();
+        if (ui_) {
+            ui_->UpdatePointCloudGlobal(map_->GetStaticCloud());
+            ui_->UpdatePointCloudDynamic(map_->GetDynamicCloud());
         }
-        usleep(10000);
+        map_->CleanMapUpdate();
     }
 }
 
 void LidarLoc::SetInitialPose(SE3 init_pose) {
     UL lock(initial_pose_mutex_);
     loc_inited_ = false;
+    last_yaw_search_time_ = -1;
     // map_->ClearMap();
 
     initial_pose_set_ = true;
@@ -431,12 +452,13 @@ void LidarLoc::SetInitialPose(SE3 init_pose) {
     LOG(INFO) << "Set initial pose is: " << initial_pose_.translation().transpose();
 }
 
-void LidarLoc::Align(const CloudPtr& input) {
+void LidarLoc::Align(const CloudPtr& input, double scan_end_time) {
     // 输入必须非空
     assert(input != nullptr);
 
     // 点云去畸变定到了结束时间，所以该点云的定位也是到结束时间的
-    double current_time = math::ToSec(input->header.stamp) + lo::lidar_time_interval;
+    // Deskew and odometry refer to this exact scan end, not a mean scan duration.
+    double current_time = scan_end_time;
     current_timestamp_ = current_time;
 
     LOG(INFO) << "current time: " << std::fixed << std::setprecision(12) << current_timestamp_;
@@ -595,6 +617,7 @@ void LidarLoc::Align(const CloudPtr& input) {
 
     /// 注意load on pose存在滞后，优先load on DR
     map_->LoadOnPose(guess_from_dr);
+    RefreshMap();
 
     loc_success_lo = Localize(current_pose_esti, fitness_score, input, output_cloud);  // LO 那个肯定会算
     double score_lo = fitness_score;
@@ -609,7 +632,7 @@ void LidarLoc::Align(const CloudPtr& input) {
         /// 尝试DR外推的pose
         res_of_dr = guess_from_dr;
         loc_success_dr = Localize(res_of_dr, score_dr, input, output_cloud);
-        if (score_dr > (fitness_score - 0.1)) {
+        if (loc_success_dr && (!loc_success_lo || score_dr > (fitness_score - 0.1))) {
             current_pose_esti = res_of_dr;
             fitness_score = score_dr;
             LOG(INFO) << "take dr guess: " << current_pose_esti.translation().transpose()
@@ -626,7 +649,7 @@ void LidarLoc::Align(const CloudPtr& input) {
         loc_success_self = Localize(res_of_self, score_self, input, output_cloud);
 
         // 避免分值接近但长时间采信自身预测，此处更相信外部预测源
-        if (score_self > (fitness_score + 0.1)) {
+        if (loc_success_self && (!(loc_success_lo || loc_success_dr) || score_self > (fitness_score + 0.1))) {
             current_pose_esti = res_of_self;
             fitness_score = score_self;
             LOG(INFO) << "take self guess: " << current_pose_esti.translation().transpose()
@@ -694,10 +717,10 @@ void LidarLoc::Align(const CloudPtr& input) {
         UL lock(result_mutex_);
         localization_result_.timestamp_ = current_timestamp_;
         localization_result_.confidence_ = fitness_score;
-        if (match_fail_count_ < 100) {
+        if (loc_success) {
             localization_result_.lidar_loc_valid_ = true;
             localization_result_.status_ = LocalizationStatus::GOOD;
-        } else if (match_fail_count_ >= 100 && match_fail_count_ < 300) {
+        } else if (match_fail_count_ < 300) {
             localization_result_.lidar_loc_valid_ = false;
             localization_result_.status_ = LocalizationStatus::FOLLOWING_DR;
         } else {
@@ -827,10 +850,29 @@ bool LidarLoc::Localize(SE3& pose, double& confidence, CloudPtr input, CloudPtr 
     trans = ndt->getFinalTransformation();
     confidence = ndt->getTransformationProbability();
 
-    if (loc_inited_ == false && confidence > options_.min_init_confidence_) {
-        loc_success = true;
-    } else {
-        loc_success = true;
+    const double min_confidence = loc_inited_ ? options_.min_tracking_confidence_ : options_.min_init_confidence_;
+    // A fine grid has a small capture range. Recover from a poor odometry guess
+    // on the coarse grid, then require a supported match on the fine grid again.
+    if (loc_inited_ && !use_rough_res &&
+        (!ndt->hasConverged() || !std::isfinite(confidence) || confidence < min_confidence)) {
+        pcl_ndt_rough_->setInputSource(input);
+        pcl_ndt_rough_->align(*output, guess_pose);
+        if (pcl_ndt_rough_->hasConverged() &&
+            pcl_ndt_rough_->getFinalTransformation().allFinite() &&
+            pcl_ndt_rough_->getTransformationProbability() >= min_confidence) {
+            const Eigen::Matrix4f coarse_pose = pcl_ndt_rough_->getFinalTransformation();
+            ndt->align(*output, coarse_pose);
+            trans = ndt->getFinalTransformation();
+            confidence = ndt->getTransformationProbability();
+        }
+    }
+    loc_success = ndt->hasConverged() && trans.allFinite() && std::isfinite(confidence) &&
+                  confidence >= min_confidence;
+    if (!loc_success) {
+        LOG(WARNING) << "NDT match rejected: confidence=" << confidence
+                     << ", converged=" << ndt->hasConverged();
+        confidence = 0;
+        return false;
     }
 
     if (options_.enable_icp_adjust_ && loc_inited_) {
@@ -960,9 +1002,6 @@ bool LidarLoc::AssignDRPose(double timestamp) {
 void LidarLoc::Finish() {
     if (map_) {
         LOG(INFO) << "saving maps";
-        update_map_quit_ = true;
-        update_map_thread_.join();
-
         /// 永久保存时，再存储地图
         if (options_.map_option_.policy_ == TiledMap::DynamicCloudPolicy::PERSISTENT &&
             options_.map_option_.save_dyn_when_quit_ && !has_set_pose_) {
