@@ -60,6 +60,106 @@ For headless operation, set `system.with_ui: false` in the selected configuratio
 
 </details>
 
+### 1.2 Transfer and build on an offline M20 Pro
+
+On your computer, run from the repository root. Set `AOS` to `10.21.41.1` when
+using the additional network adapter; the usual address is `10.21.33.103`:
+
+```bash
+export AOS=10.21.33.103
+git archive --format=tar.gz --output=/tmp/lightning-source.tar.gz HEAD
+scp /tmp/lightning-source.tar.gz "user@$AOS:~/"
+ssh "user@$AOS"
+```
+
+On AOS, extract into a new deployment directory and check the dependencies:
+
+```bash
+mkdir -p ~/lightning-lm
+tar -xzf ~/lightning-source.tar.gz --touch -C ~/lightning-lm
+cd ~/lightning-lm
+source /opt/ros/foxy/setup.bash
+bash scripts/install_dep.sh --check
+```
+
+If dependencies are missing, complete the package-transfer steps below before
+building. The dependency check does not access the internet.
+
+<details>
+<summary>1.2.1 Transfer missing dependency packages</summary>
+
+On AOS, generate a download list using its installed packages and APT indexes:
+
+```bash
+bash scripts/install_dep.sh --download-uris > ~/lightning-dependencies.uris
+```
+
+On your internet-connected computer, keep `AOS` set to the selected address.
+Copy the list, download the requested packages, then transfer them to AOS:
+
+```bash
+scp "user@$AOS:~/lightning-dependencies.uris" /tmp/lightning-dependencies.uris
+mkdir -p /tmp/lightning-debs
+(
+  set -e
+  while read -r uri filename rest; do
+    wget -O "/tmp/lightning-debs/$filename" "${uri:1:-1}"
+  done < /tmp/lightning-dependencies.uris
+)
+scp -r /tmp/lightning-debs "user@$AOS:~/"
+```
+
+Wait for all downloads to succeed before transferring. On AOS, install from
+the transferred packages with network downloads disabled:
+
+```bash
+bash scripts/install_dep.sh --offline "$HOME/lightning-debs"
+bash scripts/install_dep.sh --check
+```
+
+Generate the list on AOS so it selects Ubuntu 20.04 ARM64/Foxy packages and their
+missing dependencies. The downloading computer may use x86 Ubuntu 20.04 or 22.04;
+it downloads the exact requested files without installing them. An empty list
+means the required packages are already installed.
+
+This uses the robot's existing, trusted APT package indexes. If APT cannot locate
+a package or a requested version is no longer available, refresh those indexes
+through an offline APT workflow before generating a new list. See
+[Ubuntu's apt-offline guide](https://manpages.ubuntu.com/manpages/focal/man8/apt-offline.8.html).
+The offline install fails if required packages are missing from the transfer.
+
+</details>
+
+Build and install locally on AOS:
+
+```bash
+CMAKE_BUILD_PARALLEL_LEVEL=2 bash scripts/build.sh
+source scripts/setup.bash
+ros2 pkg executables lightning
+ros2 interface show lightning/srv/SaveMap
+ros2 interface show livox_ros_driver2/msg/CustomMsg
+```
+
+Continue with [sensor preparation](#51-m20-pro),
+[onboard mapping](#6-onboard-mapping), and
+[onboard localization](#7-onboard-localization).
+
+<details>
+<summary>1.2.2 Archive contents and build output</summary>
+
+The archive contains the checked-out commit, including the Pangolin source ZIP,
+Sophus, Miao, and Livox message definitions. Commit local source changes before
+creating it. Build and install directories from your computer are excluded;
+AOS compiles native ARM binaries from the transferred sources.
+
+The build script requires no downloads. It builds Pangolin into `.deps` and
+installs Lightning-LM into `install` in this deployment directory. Keep these
+directories for incremental builds. The `--touch` extraction option gives the
+new source files AOS's current modification time; preserve the robot's sensor
+clock synchronization.
+
+</details>
+
 ## 2. Select a sensor and recording
 
 | Sensor system | Configuration | LiDAR input | IMU input |
@@ -108,7 +208,7 @@ disable fixed-height and 2D pose constraints. See the
 
 </details>
 
-## 3. Build a map
+## 3. Map a recording
 
 ### 3.1 Offline mapping
 
@@ -122,7 +222,7 @@ prints `map saved`, and closes the viewer.
 
 ### 3.2 Online mapping
 
-Start the node before the sensor drivers or bag playback:
+Start the node before bag playback:
 
 ```bash
 ros2 run lightning run_slam_online --config "$CONFIG"
@@ -134,7 +234,6 @@ In another sourced terminal, set `BAG` and replay the recording:
 ros2 bag play "$BAG" --rate 1.0
 ```
 
-For live operation, start your sensor drivers using [section 5](#5-connect-the-sensor-drivers).
 When mapping is finished, call this service from another sourced terminal:
 
 ```bash
@@ -144,6 +243,7 @@ ros2 service call /lightning/save_map lightning/srv/SaveMap "{map_id: online_map
 Wait for `response: 0`, then press **Ctrl+C** in the mapping terminal. The map is
 saved to `data/online_map/` relative to that terminal's working directory.
 Choose a new `map_id` for each run. Online mapping requires this explicit save.
+For live sensor input, follow [onboard mapping](#6-onboard-mapping).
 
 <details>
 <summary>3.3 Map files and viewer controls</summary>
@@ -181,7 +281,7 @@ pcl_viewer "$PWD/data/online_map/global.pcd" -ps 2
 
 Use your chosen map directory or `map_id` if it differs from these examples.
 
-## 4. Localize in a saved map
+## 4. Localize a recording
 
 ### 4.1 Offline localization
 
@@ -199,9 +299,10 @@ ros2 run lightning run_loc_online \
   --trajectory "$PWD/localization_online.tum"
 ```
 
-Start the drivers or replay the bag from another sourced terminal using the
+Replay the bag from another sourced terminal using the
 command in section 3.2. The viewer shows the reference map, scan, and trajectory.
 Press **Ctrl+C** after playback to close the viewer and flush the trajectory.
+For live sensor input, follow [onboard localization](#7-onboard-localization).
 
 <details>
 <summary>4.3 Initialization and pose output</summary>
@@ -234,7 +335,14 @@ sudo systemctl start multicast-relay.service
 sudo systemctl status multicast-relay.service
 ```
 
-In another terminal, connect to AOS through the robot's Wi-Fi:
+In another terminal, connect to AOS at its usual address:
+
+```bash
+ssh user@10.21.33.103
+```
+
+When using the additional network adapter configured for `10.21.41.1`, connect
+through that address instead:
 
 ```bash
 ssh user@10.21.41.1
@@ -248,7 +356,15 @@ source /opt/robot/scripts/setup_ros2.sh
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/config/fastdds.xml"
 source scripts/setup.bash
-export CONFIG="$PWD/config/m20_pro.yaml"
+```
+
+Prepare a runtime copy of the M20 preset for operation without a display:
+
+```bash
+mkdir -p data
+cp config/m20_pro.yaml data/m20_pro_headless.yaml
+sed -i 's/with_ui: true/with_ui: false/' data/m20_pro_headless.yaml
+export CONFIG="$PWD/data/m20_pro_headless.yaml"
 ```
 
 Check each sensor topic, stopping each command with **Ctrl+C**:
@@ -258,48 +374,21 @@ ros2 topic hz /LIDAR/POINTS
 ros2 topic hz /IMU
 ```
 
-Keep the firmware sensor publishers running. Use the online mapping command in
-section 3.2. In a second AOS terminal, repeat the root-shell setup above and call
-the save service. Wait for `response: 0` before stopping mapping:
-
-```bash
-ros2 service call /lightning/save_map lightning/srv/SaveMap "{map_id: online_map}"
-```
-
-For localization, load that map and give Lightning-LM its own TF topic alongside
-the firmware's localization output:
-
-```bash
-export MAP="$PWD/data/online_map"
-ros2 run lightning run_loc_online \
-  --config "$CONFIG" --map_path "$MAP" \
-  --trajectory "$PWD/localization_online.tum" \
-  -- --ros-args -r /tf:=/lightning/tf -r /initialpose:=/lightning/initialpose
-```
-
-Pose output is `/lightning/pose`; transforms are on `/lightning/tf`. Use a new
-`map_id` for subsequent mapping runs and update `MAP` to match.
+Keep the firmware sensor publishers running. Continue with
+[onboard mapping](#6-onboard-mapping) or
+[onboard localization](#7-onboard-localization).
+Repeat the root-shell setup in every AOS application or service terminal.
 
 <details>
-<summary>5.1.1 Connection and headless operation</summary>
+<summary>5.1.1 Relay and runtime configuration</summary>
 
-AOS is also reachable at `10.21.33.103` on the robot's internal network.
 To start the relay automatically after reboot, run
 `sudo systemctl enable multicast-relay.service` on NOS.
 
-For an SSH session without a display, make a runtime copy of the M20 preset with
-the viewer disabled. Use this `CONFIG` for both mapping and localization:
-
-```bash
-mkdir -p data
-cp config/m20_pro.yaml data/m20_pro_headless.yaml
-sed -i 's/with_ui: true/with_ui: false/' data/m20_pro_headless.yaml
-export CONFIG="$PWD/data/m20_pro_headless.yaml"
-```
-
-Repeat the `CONFIG` assignment in each application terminal. View the saved
-`global.pcd` on a computer with a display using section 3.4. Preserve the robot's
-sensor clock synchronization when setting up live inputs.
+The runtime copy changes only `system.with_ui`; sensor calibration and estimator
+settings remain the same as `config/m20_pro.yaml`. Use the same copy for mapping
+and localization. Preserve the robot's sensor clock synchronization when setting
+up live inputs.
 
 </details>
 
@@ -349,10 +438,114 @@ CPU overload.
 
 </details>
 
-## 6. Results and onboard resources
+## 6. Onboard mapping
+
+Complete [M20 Pro preparation](#51-m20-pro), then run these commands from the
+repository root on AOS. Keep the robot standing during initialization and leave
+the sensor publishers running.
+
+### 6.1 Start mapping
+
+In the prepared root shell:
+
+```bash
+export CONFIG="$PWD/data/m20_pro_headless.yaml"
+ros2 run lightning run_slam_online --config "$CONFIG"
+```
+
+### 6.2 Save the map
+
+In a second AOS terminal, repeat the root-shell setup in section 5.1, then save
+to a new map directory:
+
+```bash
+ros2 service call /lightning/save_map lightning/srv/SaveMap "{map_id: onboard_map}"
+```
+
+Wait for `response: 0` before pressing **Ctrl+C** in the mapping terminal.
+The map is saved to `data/onboard_map/` relative to the mapping terminal's
+repository root. Choose a new `map_id` for each mapping run.
 
 <details>
-<summary>6.1 Seven-dataset reconstruction and localization results</summary>
+<summary>6.3 Live input and saved maps</summary>
+
+Onboard mapping uses the same `run_slam_online` application and M20 sensor
+settings as online dataset playback. The robot's firmware supplies LiDAR and IMU
+messages directly; no bag player is needed.
+
+Keep the complete map directory, including `index.txt`, all numbered `.pcd`
+tiles, and `global.pcd`. The same map format is used by recorded-data and onboard
+localization. The runtime copy disables the live viewer; the saved point cloud
+can be viewed on a computer with an OpenGL desktop.
+
+</details>
+
+### 6.4 View the saved map
+
+On a computer with a display, copy the complete map directory into
+`data/onboard_map/` if needed, then open the saved cloud:
+
+```bash
+pcl_viewer data/onboard_map/global.pcd -ps 2
+```
+
+## 7. Onboard localization
+
+Stop mapping first. Complete [M20 Pro preparation](#51-m20-pro) in the
+localization terminal and run from the repository root on AOS.
+
+### 7.1 Load the map and start localization
+
+Use the map saved in section 6, or set `MAP` to an existing complete map directory:
+
+```bash
+export CONFIG="$PWD/data/m20_pro_headless.yaml"
+export MAP="$PWD/data/onboard_map"
+ros2 run lightning run_loc_online \
+  --config "$CONFIG" --map_path "$MAP" \
+  --trajectory "$PWD/localization_onboard.tum" \
+  -- --ros-args -r /tf:=/lightning/tf -r /initialpose:=/lightning/initialpose
+```
+
+### 7.2 Check the pose and stop
+
+In another AOS terminal, repeat the root-shell setup in section 5.1 and check the
+pose and transform topics. Stop each check with **Ctrl+C** before running the next:
+
+```bash
+ros2 topic echo /lightning/pose
+ros2 topic echo /lightning/tf
+```
+
+Press **Ctrl+C** in the localization terminal when finished. Valid localization
+poses are written to `localization_onboard.tum`; the reference map is preserved.
+
+<details>
+<summary>7.3 Initialization, dataset maps, and pose output</summary>
+
+Onboard localization uses the same `run_loc_online` application and sensor
+settings as online dataset playback. Maps from recorded data and live mapping
+use the same directory format; keep the complete tiles and use the matching
+sensor calibration.
+
+Initialization starts around the map's saved starting pose. Start near that
+pose, or provide an initial estimate on `/lightning/initialpose` using
+`geometry_msgs/msg/PoseWithCovarianceStamped` with `header.frame_id: map`.
+
+The robot's firmware already publishes transforms on `/tf`. The command above
+publishes Lightning-LM's `map` → `base_link` transform on `/lightning/tf` and
+receives initial poses on `/lightning/initialpose`. Pose output remains on
+`/lightning/pose`. The `--` separator before `--ros-args` is required.
+
+The trajectory uses `timestamp x y z qx qy qz qw` rows and includes valid map
+matches. An existing trajectory file at the selected path is replaced.
+
+</details>
+
+## 8. Results and onboard resources
+
+<details>
+<summary>8.1 Seven-dataset reconstruction and localization results</summary>
 
 All seven recordings passed offline/online mapping and offline/online localization
 checks on Ubuntu 22.04 / Humble, with the viewer enabled and online playback at 1×.
@@ -378,7 +571,7 @@ See [validation details and recording paths](doc/validation.md) for the evidence
 </details>
 
 <details>
-<summary>6.2 RK3588 and the 16 GB memory budget</summary>
+<summary>8.2 RK3588 and the 16 GB memory budget</summary>
 
 The largest measured application memory footprint was **1.26 GiB**, or **1.41 GiB**
 including bag playback, on the x86 workstation with visualization enabled.
@@ -400,7 +593,7 @@ Start onboard builds with two jobs and validation at normal sensor rate. Disable
 
 </details>
 
-## 7. Maintenance and license
+## 9. Maintenance and license
 
 Contributor guidance lives in [AGENTS.md](AGENTS.md), with detailed
 [implementation](doc/implementation.md) and [validation](doc/validation.md) notes.

@@ -75,6 +75,12 @@ cache hits separately; compiler profiling with `-ftime-report` adds overhead and
 is not a substitute for timing the ordinary build. Keep benchmark scripts and
 measurements in ignored outputs.
 
+RK3588 firmware can isolate A76 CPUs from scheduler load balancing. An affinity
+mask covering several isolated CPUs can still leave both compiler jobs on one
+core. Check actual CPU placement when reporting onboard build performance;
+`CMAKE_BUILD_PARALLEL_LEVEL=2` means two jobs, not necessarily two occupied cores.
+Preserve firmware real-time scheduling and sensor/control services.
+
 C++ Release builds retain `-O2` and enabled assertions; do not silently replace
 them with CMake's `-O3 -DNDEBUG` defaults. Debug symbols are selected through
 `CMAKE_BUILD_TYPE=RelWithDebInfo` or `Debug`, including when using `scripts/build.sh`.
@@ -82,6 +88,19 @@ The script detects ccache for both Pangolin and Lightning-LM, respects explicit
 `CMAKE_C_COMPILER_LAUNCHER` / `CMAKE_CXX_COMPILER_LAUNCHER` environment settings,
 and clears stale launchers when no cache is available. Keep normal cache validity
 checks enabled.
+
+For offline deployments, archive the selected commit with all tracked vendored
+sources; do not transfer x86 build products to ARM. `install_dep.sh --check` only
+reports missing packages. `--download-uris` resolves their dependency downloads
+against the target's installed state and trusted APT indexes, using an empty
+cache so already-cached packages are included in the request. Run it on AOS,
+then download those exact URIs on the connected computer with APT's requested
+filenames. `--offline DIRECTORY` must retain `--no-download` and `--no-remove`,
+use the transferred cache, and never run `apt-get update`. APT verifies cached
+packages against its indexes. Missing/stale indexes need an offline index update;
+do not substitute the workstation's architecture, distribution, or package state.
+Keep the online installer's package list as the single dependency list for all
+modes. Check both Foxy and Humble argument paths and preserve installation errors.
 
 Keep `common/so3_math.hpp` independent of PCL and ROS. The non-template PCL voxel
 filter and SVD helper belong in `core/lightning_math.cc`, so including the math
@@ -154,11 +173,19 @@ cross-host UDP and new physical-driver deployments still require validation.
 
 - NOS is `10.21.31.106`; `multicast-relay.service` permits point-cloud access.
   Start it before testing LiDAR delivery; enabling it at boot is optional.
-- AOS is `10.21.33.103`, accessible through Wi-Fi SSH at `10.21.41.1`.
+- AOS normally uses `10.21.33.103`. The additional network adapter used in the
+  hardware session exposes it at `10.21.41.1`; do not present that address as the
+  default for every Wi-Fi connection.
   Use a root application shell and source `/opt/robot/scripts/setup_ros2.sh`,
   then explicitly select this checkout's Fast DDS XML before sourcing setup.
   An ordinary-user probe received IMU but no LiDAR; root received both with the
   firmware and checkout profiles. Discovery alone does not prove delivery.
+- Keep separate, complete onboard mapping and localization workflows in the
+  README, alongside the recorded-data workflows. Both use the same online
+  executables, sensor presets, and tiled-map format. The headless runtime copy
+  changes only `system.with_ui`; do not add separate production SLAM/loc presets.
+  When consulting another branch's hardware guide, verify commands against this
+  branch's executables, services, and topics before documenting them.
 - Keep firmware drivers and control services running. The firmware already
   publishes `map` to `base_link` on `/tf`. For independent Lightning-LM use,
   remap its TF and initial-pose topics as shown in the README. Gflags requires

@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
+usage() {
+    echo "Usage: bash scripts/install_dep.sh [--check | --download-uris | --offline DEB_DIRECTORY]"
+}
+mode=${1:-online}
+case "$mode" in
+    online) [[ $# -eq 0 ]] || { usage >&2; exit 2; } ;;
+    --check|--download-uris) [[ $# -eq 1 ]] || { usage >&2; exit 2; } ;;
+    --offline)
+        [[ $# -eq 2 && -d $2 ]] || { usage >&2; exit 2; }
+        package_cache=$(cd -- "$2" && pwd)
+        ;;
+    --help|-h) usage; exit 0 ;;
+    *) usage >&2; exit 2 ;;
+esac
 case "${ROS_DISTRO:-}" in
     foxy|humble) ;;
     *) echo "Source /opt/ros/foxy/setup.bash (Ubuntu 20.04) or /opt/ros/humble/setup.bash (Ubuntu 22.04) first." >&2; exit 1 ;;
@@ -21,8 +35,28 @@ for package in "${packages[@]}"; do
     fi
 done
 if ((${#missing[@]})); then
-    sudo apt-get update
-    sudo apt-get install -y "${missing[@]}"
+    case "$mode" in
+        --check)
+            printf 'Missing dependency: %s\n' "${missing[@]}" >&2
+            exit 1
+            ;;
+        --download-uris)
+            # Resolve on the target using its package indexes and installed state.
+            # An empty cache also lists packages already cached elsewhere on AOS.
+            uri_cache=$(mktemp -d)
+            trap 'rm -rf -- "$uri_cache"' EXIT
+            apt-get -qq --print-uris --yes --download-only --no-remove \
+                -o "Dir::Cache::archives=$uri_cache" install "${missing[@]}"
+            ;;
+        --offline)
+            sudo apt-get --no-download --no-remove \
+                -o "Dir::Cache::archives=$package_cache" install -y "${missing[@]}"
+            ;;
+        online)
+            sudo apt-get update
+            sudo apt-get install -y "${missing[@]}"
+            ;;
+    esac
 else
-    echo "All build and ROS dependencies are installed."
+    echo "All build and ROS dependencies are installed." >&2
 fi
