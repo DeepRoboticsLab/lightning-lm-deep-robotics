@@ -12,7 +12,7 @@
 #include "core/localization/localization_result.h"
 #include "core/maps/tiled_map.h"
 
-#include "pclomp/ndt_omp_impl.hpp"
+#include "pclomp/ndt_omp.h"
 
 namespace lightning::ui {
 class PangolinWindow;

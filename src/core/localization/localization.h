@@ -1,15 +1,20 @@
 #pragma once
 
+#include <fstream>
+#include <functional>
+#include <sensor_msgs/msg/point_cloud2.hpp>
+
 #include "geometry_msgs/msg/transform_stamped.hpp"
+#include "livox_ros_driver2/msg/custom_msg.hpp"
 #include "std_msgs/msg/int32.hpp"
 
 #include "common/imu.h"
-#include "core/lio/laser_mapping.h"
+#include "common/keyframe.h"
 #include "core/localization/localization_result.h"
-#include <fstream>
 
 /// 预声明
 namespace lightning {
+class LaserMapping;
 namespace ui {
 class PangolinWindow;
 }

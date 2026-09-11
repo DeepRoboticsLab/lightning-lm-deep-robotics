@@ -69,6 +69,27 @@ RK3588 target start with `CMAKE_BUILD_PARALLEL_LEVEL=2`. This is a build-memory
 choice; runtime threading is controlled separately. Do not enable x86 flags on
 ARM or make `-march=native` a portable binary default.
 
+For build comparisons, use the same job count and reduce it when measured compiler
+memory would exceed available RAM. Report fresh builds, incremental builds, and
+cache hits separately; compiler profiling with `-ftime-report` adds overhead and
+is not a substitute for timing the ordinary build. Keep benchmark scripts and
+measurements in ignored outputs.
+
+C++ Release builds retain `-O2` and enabled assertions; do not silently replace
+them with CMake's `-O3 -DNDEBUG` defaults. Debug symbols are selected through
+`CMAKE_BUILD_TYPE=RelWithDebInfo` or `Debug`, including when using `scripts/build.sh`.
+The script detects ccache for both Pangolin and Lightning-LM, respects explicit
+`CMAKE_C_COMPILER_LAUNCHER` / `CMAKE_CXX_COMPILER_LAUNCHER` environment settings,
+and clears stale launchers when no cache is available. Keep normal cache validity
+checks enabled.
+
+Keep `common/so3_math.hpp` independent of PCL and ROS. The non-template PCL voxel
+filter and SVD helper belong in `core/lightning_math.cc`, so including the math
+header does not instantiate these algorithms in every consumer. Include Eigen
+decomposition headers and other dependencies where they are used. Avoid pulling
+IMU processing or NDT implementation headers into public module headers merely
+to declare pointers.
+
 The project supports Ubuntu 20.04 / Foxy and Ubuntu 22.04 / Humble. The user has
 verified both versions and explicitly requested this support statement. This
 session's detailed seven-dataset/build evidence comes from Humble on x86-64;

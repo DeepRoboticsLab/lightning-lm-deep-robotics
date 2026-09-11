@@ -1,6 +1,7 @@
 #ifndef ANDERSONACCELERATION_H_
 #define ANDERSONACCELERATION_H_
 
+#include <Eigen/QR>
 #include <omp.h>
 #include <algorithm>
 #include <cassert>

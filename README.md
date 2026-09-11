@@ -45,6 +45,16 @@ locally. On a computer with limited RAM, including the RK3588, start with:
 CMAKE_BUILD_PARALLEL_LEVEL=2 bash scripts/build.sh
 ```
 
+Keep the generated build directories and rerun `bash scripts/build.sh` after
+editing the code. The installer includes `ccache`, which the build script uses
+automatically to reuse previous compilations. Run `ccache -s` to see cache usage.
+
+The default Release build omits debug symbols. To include them for debugging:
+
+```bash
+CMAKE_BUILD_TYPE=RelWithDebInfo bash scripts/build.sh
+```
+
 A clean source build was checked; a fresh operating-system installation was not.
 For headless operation, set `system.with_ui: false` in the selected configuration.
 

@@ -5,10 +5,21 @@
 #include "common/options.h"
 #include "core/lightning_math.hpp"
 #include "laser_mapping.h"
+#include "core/lio/imu_processing.hpp"
 #include "ui/pangolin_window.h"
 #include "wrapper/ros_utils.h"
 
 namespace lightning {
+
+NavState LaserMapping::GetIMUState() const {
+    if (p_imu_->IsIMUInited()) {
+        return kf_imu_.GetX();
+    } else {
+        NavState s;
+        s.pose_is_ok_ = false;
+        return s;
+    }
+}
 
 bool LaserMapping::Init(const std::string &config_yaml) {
     LOG(INFO) << "init laser mapping from " << config_yaml;

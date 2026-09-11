@@ -9,15 +9,17 @@
 #include "common/eigen_types.h"
 #include "common/imu.h"
 #include "common/keyframe.h"
+#include "common/measure_group.h"
 #include "common/options.h"
 #include "core/ivox3d/ivox3d.h"
 #include "core/lio/eskf.hpp"
-#include "core/lio/imu_processing.hpp"
 #include "pointcloud_preprocess.h"
 
 #include "livox_ros_driver2/msg/custom_msg.hpp"
 
 namespace lightning {
+
+class ImuProcess;
 
 namespace ui {
 class PangolinWindow;
@@ -81,15 +83,7 @@ class LaserMapping {
     NavState GetState() const { return state_point_; }
 
     /// 获取IMU状态
-    NavState GetIMUState() const {
-        if (p_imu_->IsIMUInited()) {
-            return kf_imu_.GetX();
-        } else {
-            NavState s;
-            s.pose_is_ok_ = false;
-            return s;
-        }
-    }
+    NavState GetIMUState() const;
 
     CloudPtr GetScanUndist() const { return scan_undistort_; }
 

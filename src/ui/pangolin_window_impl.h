@@ -2,10 +2,8 @@
 
 #include <pangolin/pangolin.h>
 
-#include <pcl/filters/voxel_grid.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
-#include <pcl/impl/pcl_base.hpp>
 
 #include <atomic>
 #include <deque>

@@ -3,7 +3,7 @@
 //
 #pragma once
 
-#include "core/lightning_math.hpp"
+#include "common/so3_math.hpp"
 
 namespace lightning {
 

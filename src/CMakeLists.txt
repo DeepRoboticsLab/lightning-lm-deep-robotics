@@ -7,6 +7,7 @@ add_library(${PROJECT_NAME}.libs SHARED
         io/yaml_io.cc
         io/file_io.cc
 
+        core/lightning_math.cc
         core/lio/eskf.cc
         core/lio/laser_mapping.cc
         core/lio/pointcloud_preprocess.cc

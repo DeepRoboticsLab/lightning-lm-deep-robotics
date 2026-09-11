@@ -5,6 +5,9 @@
 #ifndef FUSION_ESKF_HPP
 #define FUSION_ESKF_HPP
 
+#include <Eigen/LU>
+#include <functional>
+
 #include "common/eigen_types.h"
 #include "common/nav_state.h"
 #include "core/lio/anderson_acceleration.h"
