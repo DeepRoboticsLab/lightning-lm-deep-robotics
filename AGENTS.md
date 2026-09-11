@@ -37,9 +37,12 @@ Production entry points are the four `src/app/run_{slam,loc}_{offline,online}.cc
 programs. The supported scripts are `scripts/install_dep.sh`, `scripts/build.sh`,
 and `scripts/setup.bash`. Keep experimental runners, screenshot/render scripts,
 profiling helpers, temporary test programs, and unrelated configs out of the
-published tree. Store lasting maintenance knowledge and compact verification
-records in `doc/`; keep bags, generated maps, raw logs, and binaries in ignored
-or external output directories. Do not delete existing evidence during cleanup.
+published tree. Keep new investigation reports, verification records, images,
+logs, maps, and binaries in ignored `outputs/` or external directories, and
+report results to the user. Do not add session-specific validation artifacts to
+the public tree. Preserve historical evidence already in `doc/`. Keep durable
+maintenance guidance here and user-facing operating instructions in the README.
+Do not delete existing evidence during cleanup.
 
 Build products live under `build*`, `install*`, `bin`, `log*`, and `.deps`.
 `thirdparty/Pangolin-0.9.3.zip` is the source dependency; its extracted directory
@@ -124,7 +127,35 @@ message, and 4096 descriptors. Source setup in application/player terminals.
 Export the middleware/profile in the separately sourced physical driver
 workspace and restart its publisher. Do not shadow the real Livox driver with
 this repository's message-only package. SHM evidence applies to local processes;
-physical drivers and cross-host UDP still require validation.
+cross-host UDP and new physical-driver deployments still require validation.
+
+### M20 Pro onboard operation
+
+- NOS is `10.21.31.106`; `multicast-relay.service` permits point-cloud access.
+  Start it before testing LiDAR delivery; enabling it at boot is optional.
+- AOS is `10.21.33.103`, accessible through Wi-Fi SSH at `10.21.41.1`.
+  Use a root application shell and source `/opt/robot/scripts/setup_ros2.sh`,
+  then explicitly select this checkout's Fast DDS XML before sourcing setup.
+  An ordinary-user probe received IMU but no LiDAR; root received both with the
+  firmware and checkout profiles. Discovery alone does not prove delivery.
+- Keep firmware drivers and control services running. The firmware already
+  publishes `map` to `base_link` on `/tf`. For independent Lightning-LM use,
+  remap its TF and initial-pose topics as shown in the README. Gflags requires
+  the `--` separator before `--ros-args`; verify resolved endpoints.
+- AOS may be synchronized by `ptp4l`/`phc2sys`. A manually set wall clock can be
+  immediately replaced by the robot's clock source. Do not disable sensor
+  synchronization to remove build timestamp warnings. Normalize timestamps only
+  in a new source export when necessary; do not touch all existing build products
+  during incremental-build measurements.
+- The stationary run used an external copy of `m20_pro.yaml` with only
+  `system.with_ui: false`. It exercised online mapping, save-service export,
+  localization, and separate saved-map rendering. A one-keyframe stationary map
+  does not qualify moving routes, loop closure, larger maps, or onboard rendering.
+- Preserve Foxy/PCL 1.10 and Humble/PCL 1.12 compatibility on x86 and ARM:
+  ROS service callbacks take request shared pointers by value for Foxy's exact
+  callback traits. Construct clouds through the PCL `CloudPtr` alias; older PCL
+  uses Boost pointers and newer PCL uses standard-library pointers. Never replace
+  this alias with an unconditional `std::make_shared` for PCL clouds.
 
 Keep bounded sensor queues, four-worker NDT/oneTBB limits, passive OpenMP waiting,
 5 Hz map localization, and distant-tile unloading unless measurements justify a

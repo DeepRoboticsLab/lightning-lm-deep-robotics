@@ -214,21 +214,102 @@ names, extrinsics, and the saved map must match the selected sensor setup.
 
 ## 5. Connect the sensor drivers
 
-Start the hardware drivers separately. This repository includes Livox message
-definitions; the full Mid360 driver must come from your driver workspace.
-In that workspace's sourced terminal, export the following from this repository
-root **before launching the driver**:
+### 5.1 M20 Pro
+
+On the NOS host, start the point-cloud relay:
+
+```bash
+ssh user@10.21.31.106
+sudo systemctl start multicast-relay.service
+sudo systemctl status multicast-relay.service
+```
+
+In another terminal, connect to AOS through the robot's Wi-Fi:
+
+```bash
+ssh user@10.21.41.1
+```
+
+Change to the repository directory built in section 1, then prepare a root shell:
+
+```bash
+sudo -s
+source /opt/robot/scripts/setup_ros2.sh
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/config/fastdds.xml"
+source scripts/setup.bash
+export CONFIG="$PWD/config/m20_pro.yaml"
+```
+
+Check each sensor topic, stopping each command with **Ctrl+C**:
+
+```bash
+ros2 topic hz /LIDAR/POINTS
+ros2 topic hz /IMU
+```
+
+Keep the firmware sensor publishers running. Use the online mapping command in
+section 3.2. In a second AOS terminal, repeat the root-shell setup above and call
+the save service. Wait for `response: 0` before stopping mapping:
+
+```bash
+ros2 service call /lightning/save_map lightning/srv/SaveMap "{map_id: online_map}"
+```
+
+For localization, load that map and give Lightning-LM its own TF topic alongside
+the firmware's localization output:
+
+```bash
+export MAP="$PWD/data/online_map"
+ros2 run lightning run_loc_online \
+  --config "$CONFIG" --map_path "$MAP" \
+  --trajectory "$PWD/localization_online.tum" \
+  -- --ros-args -r /tf:=/lightning/tf -r /initialpose:=/lightning/initialpose
+```
+
+Pose output is `/lightning/pose`; transforms are on `/lightning/tf`. Use a new
+`map_id` for subsequent mapping runs and update `MAP` to match.
+
+<details>
+<summary>5.1.1 Connection and headless operation</summary>
+
+AOS is also reachable at `10.21.33.103` on the robot's internal network.
+To start the relay automatically after reboot, run
+`sudo systemctl enable multicast-relay.service` on NOS.
+
+For an SSH session without a display, make a runtime copy of the M20 preset with
+the viewer disabled. Use this `CONFIG` for both mapping and localization:
+
+```bash
+mkdir -p data
+cp config/m20_pro.yaml data/m20_pro_headless.yaml
+sed -i 's/with_ui: true/with_ui: false/' data/m20_pro_headless.yaml
+export CONFIG="$PWD/data/m20_pro_headless.yaml"
+```
+
+Repeat the `CONFIG` assignment in each application terminal. View the saved
+`global.pcd` on a computer with a display using section 3.4. Preserve the robot's
+sensor clock synchronization when setting up live inputs.
+
+</details>
+
+### 5.2 Mid360
+
+Start the hardware driver from its own workspace. This repository includes Livox
+message definitions; install and launch the full Mid360 driver separately.
+In the driver's sourced terminal, set the following before launching it, using
+this repository's location:
 
 ```bash
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/config/fastdds.xml"
+export FASTRTPS_DEFAULT_PROFILES_FILE="/path/to/lightning-lm-deep-robotics/config/fastdds.xml"
 ```
 
 Keep the driver's existing reliability setting. Lightning-LM uses **best-effort**
 subscriptions and accepts either best-effort or reliable sensor publishers.
 
 <details>
-<summary>5.1 Best-effort DDS and the larger shared-memory buffer</summary>
+<summary>5.3 Best-effort DDS and the larger shared-memory buffer</summary>
 
 Best effort avoids waiting for retransmission of missing samples. Adequate
 processing capacity and buffering still matter; delivery is not guaranteed.

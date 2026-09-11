@@ -115,7 +115,7 @@ bool SlamSystem::Init(const std::string& yaml_path) {
             });
 
         savemap_service_ = node_->create_service<SaveMapService>(
-            "lightning/save_map", [this](const SaveMapService::Request::SharedPtr& req,
+            "lightning/save_map", [this](SaveMapService::Request::SharedPtr req,
                                          SaveMapService::Response::SharedPtr res) { SaveMap(req, res); });
 
         sensor_queue_.SetName("sensor input");

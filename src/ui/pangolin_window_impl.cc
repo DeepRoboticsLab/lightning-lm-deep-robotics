@@ -56,7 +56,7 @@ void PangolinWindowImpl::Reset(const std::vector<Keyframe::Ptr> &keyframes) {
     for (; i < keyframes.size(); ++i) {
         const auto &keyframe = keyframes.at(i);
         current_scan_ui_ = std::make_shared<ui::UiCloud>();
-        CloudPtr tmp_cloud = std::make_shared<PointCloudType>(*(keyframe->GetCloud()));
+        CloudPtr tmp_cloud(new PointCloudType(*(keyframe->GetCloud())));
         current_scan_ui_->SetCloud(math::VoxelGrid(tmp_cloud, 0.5), keyframe->GetOptPose());
         current_scan_ui_->SetRenderColor(ui::UiCloud::UseColor::HEIGHT_COLOR);
 
@@ -198,7 +198,7 @@ void PangolinWindowImpl::DrawAll() {
     }
     while (keyframe_clouds_.size() < keyframes.size()) {
         const auto& source = keyframes[keyframe_clouds_.size()]->GetCloud();
-        auto sample = std::make_shared<PointCloudType>();
+        CloudPtr sample(new PointCloudType);
         sample->reserve((source->size() + 7) / 8);
         for (size_t i = 0; i < source->size(); i += 8) sample->push_back(source->points[i]);
         auto cloud = std::make_shared<UiCloud>(sample);
