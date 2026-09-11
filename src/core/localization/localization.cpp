@@ -166,6 +166,8 @@ void Localization::LidarLocProcCloud(CloudPtr scan_undist) {
     ++match_count_;
     if (res.lidar_loc_valid_) {
         ++valid_match_count_;
+        // NDT returns map_T_lidar for this deskewed scan, at its scan-end time.
+        if (visualization_callback_) visualization_callback_(res.timestamp_, res.pose_, scan_undist);
         if (trajectory_) {
             const auto t = res.pose_.translation();
             const auto q = res.pose_.unit_quaternion();

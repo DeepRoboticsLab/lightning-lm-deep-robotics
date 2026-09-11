@@ -328,31 +328,36 @@ sudo systemctl start multicast-relay.service
 sudo systemctl status multicast-relay.service
 ```
 
-In another terminal, connect to AOS at its usual address:
+On a Linux desktop, connect to AOS with X11 forwarding:
 
 ```bash
-ssh user@10.21.33.103
+ssh -Y -C user@10.21.33.103
 ```
 
 When using the additional network adapter configured for `10.21.41.1`, connect
 through that address instead:
 
 ```bash
-ssh user@10.21.41.1
+ssh -Y -C user@10.21.41.1
 ```
+
+On Windows, use an SSH client with an X server, such as MobaXterm, and enable
+**X11 forwarding** for the SSH session. Lightning-LM does not require a particular
+SSH client.
 
 Complete [onboard deployment](#5-deploy-from-a-laptop-to-the-robot), then change
 to that repository directory on AOS and prepare a root shell:
 
 ```bash
-sudo -s
+sudo env DISPLAY="$DISPLAY" XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}" bash
 source /opt/robot/scripts/setup_ros2.sh
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/config/fastdds.xml"
 source scripts/setup.bash
 ```
 
-Prepare a runtime copy of the M20 preset for operation without a display:
+Prepare a runtime copy that disables the built-in map viewer. The onboard
+commands below enable the separate RViz2 view:
 
 ```bash
 mkdir -p data
@@ -383,6 +388,17 @@ The runtime copy changes only `system.with_ui`; sensor calibration and estimator
 settings remain the same as `config/m20_pro.yaml`. Use the same copy for mapping
 and localization. Preserve the robot's sensor clock synchronization when setting
 up live inputs.
+
+The root-shell command preserves SSH's display and X authorization. Keep the
+SSH-assigned `DISPLAY`; do not replace it with the laptop's IP address. RViz2 and
+its ROS subscriptions run on AOS, while SSH forwards the window to the laptop.
+The map remains onboard. Window size and refresh rate still affect Wi-Fi traffic.
+
+If the window cannot open, check `echo "$DISPLAY"` before entering the root shell
+and reconnect with X11 forwarding enabled. The RViz command uses software OpenGL
+for forwarded displays. MobaXterm also provides OpenGL settings under
+**Settings → Configuration → X11**; see its
+[X11 documentation](https://mobaxterm.mobatek.net/documentation.html).
 
 </details>
 
@@ -444,10 +460,25 @@ In the prepared root shell:
 
 ```bash
 export CONFIG="$PWD/data/m20_pro_headless.yaml"
-ros2 run lightning run_slam_online --config "$CONFIG"
+taskset -c 7 ros2 run lightning run_slam_online --config "$CONFIG" --rviz
 ```
 
-### 7.2 Save the map
+### 7.2 View the location, LiDAR, and trajectory
+
+In another X11-forwarded AOS terminal, change to the repository root and repeat
+the root-shell setup in section 6.1, then open RViz2:
+
+```bash
+LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=2 QT_X11_NO_MITSHM=1 \
+  taskset -c 6 rviz2 -d config/onboard.rviz \
+  --ros-args -r /tf:=/lightning/tf -r /tf_static:=/lightning/tf_static
+```
+
+The window shows the **current LiDAR scan**, a **red location arrow**, and the
+**yellow trajectory**. The full map is not displayed. You can open RViz2 after
+mapping starts and still see the trajectory recorded since startup.
+
+### 7.3 Save the map
 
 In a second AOS terminal, repeat the root-shell setup in section 6.1, then save
 to a new map directory:
@@ -461,7 +492,7 @@ The map is saved to `data/onboard_map/` relative to the mapping terminal's
 repository root. Choose a new `map_id` for each mapping run.
 
 <details>
-<summary>7.3 Live input and saved maps</summary>
+<summary>7.4 Live view, CPU placement, and saved maps</summary>
 
 Onboard mapping uses the same `run_slam_online` application and M20 sensor
 settings as online dataset playback. The robot's firmware supplies LiDAR and IMU
@@ -469,12 +500,31 @@ messages directly; no bag player is needed.
 
 Keep the complete map directory, including `index.txt`, all numbered `.pcd`
 tiles, and `global.pcd`. The same map format is used by recorded-data and onboard
-localization. The runtime copy disables the live viewer; the saved point cloud
-can be viewed on a computer with an OpenGL desktop.
+localization. The runtime copy disables Pangolin; `--rviz` enables the lightweight
+ROS display outputs. Neither the RViz preset nor these outputs includes a map
+cloud.
+
+On the standard RK3588 firmware, the commands place estimation on A76 core 7 and
+RViz2 on A76 core 6. This avoids the A55 affinity inherited by some SSH shells and
+keeps rendering separate from estimation. Compiler job settings do not set runtime
+affinity. These CPU numbers apply to the M20 Pro AOS hardware.
+
+The current scan is deskewed and uses the same LiDAR pose and acquisition timestamp
+as the arrow. Both update at up to 5 Hz. Only the newest scan is shown; the path
+retains the whole session at this sample rate and refreshes at 1 Hz. Opening RViz2
+late or reopening it retrieves the retained path while the application is running.
+Restarting the application starts a new path. Path memory grows with session length.
+
+Mapping displays the current pose with the latest keyframe correction. Historical
+trajectory points keep their estimates from when they were recorded. The view
+follows `lightning_lidar`. To inspect the whole route, change **Target Frame** to
+`map` and zoom out; rotate and pan with the mouse. RViz's **Frame Rate** is set to 5
+to limit remote redraws. Actual rendering can be slower depending on the display
+and connection; reduce the setting or shrink the window on a slower connection.
 
 </details>
 
-### 7.4 View the saved map
+### 7.5 View a saved map separately
 
 On a computer with a display, copy the complete map directory into
 `data/onboard_map/` if needed, then open the saved cloud:
@@ -495,27 +545,34 @@ Use the map saved in section 7, or set `MAP` to an existing complete map directo
 ```bash
 export CONFIG="$PWD/data/m20_pro_headless.yaml"
 export MAP="$PWD/data/onboard_map"
-ros2 run lightning run_loc_online \
-  --config "$CONFIG" --map_path "$MAP" \
+taskset -c 7 ros2 run lightning run_loc_online \
+  --config "$CONFIG" --map_path "$MAP" --rviz \
   --trajectory "$PWD/localization_onboard.tum" \
   -- --ros-args -r /tf:=/lightning/tf -r /initialpose:=/lightning/initialpose
 ```
 
-### 8.2 Check the pose and stop
+### 8.2 View the location, LiDAR, and trajectory
 
-In another AOS terminal, repeat the root-shell setup in section 6.1 and check the
-pose and transform topics. Stop each check with **Ctrl+C** before running the next:
+Close the mapping RViz window. In another X11-forwarded AOS terminal, change to
+the repository root and repeat the root-shell setup in section 6.1, then run:
 
 ```bash
-ros2 topic echo /lightning/pose
-ros2 topic echo /lightning/tf
+LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=2 QT_X11_NO_MITSHM=1 \
+  taskset -c 6 rviz2 -d config/onboard.rviz \
+  --ros-args -r /tf:=/lightning/tf -r /tf_static:=/lightning/tf_static
 ```
 
-Press **Ctrl+C** in the localization terminal when finished. Valid localization
-poses are written to `localization_onboard.tum`; the reference map is preserved.
+The same view shows the current scan, location arrow, and full localization
+trajectory. The reference map is used onboard without displaying it in RViz2.
+
+### 8.3 Stop localization
+
+Press **Ctrl+C** in the localization terminal when finished, then close RViz2.
+Valid localization poses are written to `localization_onboard.tum`; the reference
+map is preserved.
 
 <details>
-<summary>8.3 Initialization, dataset maps, and pose output</summary>
+<summary>8.4 Initialization, dataset maps, and pose output</summary>
 
 Onboard localization uses the same `run_loc_online` application and sensor
 settings as online dataset playback. Maps from recorded data and live mapping
@@ -524,14 +581,26 @@ sensor calibration.
 
 Initialization starts around the map's saved starting pose. Start near that
 pose, or provide an initial estimate on `/lightning/initialpose` using
-`geometry_msgs/msg/PoseWithCovarianceStamped` with `header.frame_id: map`.
+`geometry_msgs/msg/PoseWithCovarianceStamped` with `header.frame_id: map`. The
+RViz **2D Pose Estimate** tool is configured for this topic; it supplies a starting
+guess and does not constrain subsequent estimation to 2D.
+
+The RViz scan, arrow, and path use accepted scan-to-map matches. Before
+initialization succeeds they remain empty; if matching fails they retain the last
+valid display until a new match succeeds. Check the localization terminal when
+the display stops updating.
 
 The robot's firmware already publishes transforms on `/tf`. The command above
 publishes Lightning-LM's `map` → `base_link` transform on `/lightning/tf` and
 receives initial poses on `/lightning/initialpose`. Pose output remains on
 `/lightning/pose`. The `--` separator before `--ros-args` is required.
 
-The trajectory uses `timestamp x y z qx qy qz qw` rows and includes valid map
+The display topics are `/lightning/current_pose`, `/lightning/current_scan`, and
+`/lightning/trajectory`, in frame `map`. The separate visualization transform is
+`map` → `lightning_lidar` on `/lightning/tf`. Existing `/lightning/pose` output
+continues to provide the estimator's higher-frequency pose.
+
+The trajectory file uses `timestamp x y z qx qy qz qw` rows and includes valid map
 matches. An existing trajectory file at the selected path is replaced.
 
 </details>

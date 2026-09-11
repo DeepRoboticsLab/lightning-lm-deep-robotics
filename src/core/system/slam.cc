@@ -9,6 +9,7 @@
 #include "core/maps/tiled_map.h"
 #include "ui/pangolin_window.h"
 #include "wrapper/ros_utils.h"
+#include "wrapper/online_visualization.h"
 
 #include <yaml-cpp/yaml.h>
 #include <filesystem>
@@ -80,6 +81,7 @@ bool SlamSystem::Init(const std::string& yaml_path) {
 
         /// subscribers
         node_ = std::make_shared<rclcpp::Node>("lightning_slam");
+        if (options_.with_rviz_) rviz_ = std::make_shared<OnlineVisualization>(node_);
 
         imu_topic_ = yaml["common"]["imu_topic"].as<std::string>();
         cloud_topic_ = yaml["common"]["lidar_topic"].as<std::string>();
@@ -284,8 +286,15 @@ void SlamSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr
 }
 
 void SlamSystem::ProcessBufferedLidar(bool quiet_sync) {
-    lio_->Run(quiet_sync);
+    const bool updated = lio_->Run(quiet_sync);
     auto kf = lio_->GetKeyframe();
+    if (updated && rviz_) {
+        const auto state = lio_->GetState();
+        SE3 pose = state.GetPose();
+        if (kf) pose = kf->GetOptPose() * kf->GetLIOPose().inverse() * pose;
+        rviz_->Publish(state.timestamp_, pose * SE3(state.offset_R_lidar_, state.offset_t_lidar_),
+                       lio_->GetScanUndist());
+    }
     if (kf != cur_kf_) {
         cur_kf_ = kf;
     } else {

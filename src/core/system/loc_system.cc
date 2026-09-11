@@ -6,6 +6,7 @@
 #include "core/localization/localization.h"
 #include "io/yaml_io.h"
 #include "wrapper/ros_utils.h"
+#include "wrapper/online_visualization.h"
 
 namespace lightning {
 
@@ -27,6 +28,12 @@ bool LocSystem::Init(const std::string &yaml_path, const std::string &map_overri
 
     /// subscribers
     node_ = std::make_shared<rclcpp::Node>("lightning_localization");
+    if (options_.with_rviz_) {
+        rviz_ = std::make_shared<OnlineVisualization>(node_);
+        loc_->SetVisualizationCallback([this](double stamp, const SE3& pose, const CloudPtr& scan) {
+            rviz_->Publish(stamp, pose, scan);
+        });
+    }
 
     imu_topic_ = yaml.GetValue<std::string>("common", "imu_topic");
     cloud_topic_ = yaml.GetValue<std::string>("common", "lidar_topic");

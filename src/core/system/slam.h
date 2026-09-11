@@ -23,6 +23,7 @@ namespace lightning {
 
 class LaserMapping;  //  lio 前端
 class LoopClosing;   // 回环检测
+class OnlineVisualization;
 
 namespace ui {
 class PangolinWindow;
@@ -41,6 +42,7 @@ class SlamSystem {
         Options() {}
 
         bool online_mode_ = true;  // 在线模式，在线模式下会起一些子线程来做异步处理
+        bool with_rviz_ = false;
 
         bool with_cc_ = true;               // 是否需要带交叉验证
         bool with_gridmap_ = true;          // 是否需要2D栅格
@@ -99,6 +101,7 @@ class SlamSystem {
 
     /// 实时模式下的ros2 node, subscribers
     rclcpp::Node::SharedPtr node_;
+    std::shared_ptr<OnlineVisualization> rviz_;
     std::string imu_topic_;
     std::string cloud_topic_;
     std::string livox_topic_;

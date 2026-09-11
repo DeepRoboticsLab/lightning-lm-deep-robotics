@@ -308,3 +308,52 @@ The remaining deployment work is profiling the current resource settings on the
 and cross-host DDS testing if required. Keep platform support separate from
 hardware performance measurements. See `doc/validation.md` for local bag paths, archives, rejected
 experiments, and the distinction between historical proposals and completed work.
+
+### Onboard RViz2 maintenance
+
+- Both online applications accept `--rviz`. This opt-in output is independent of
+  `system.with_ui`, which controls Pangolin. Keep the production sensor YAMLs
+  unchanged; onboard instructions disable Pangolin in an external runtime copy.
+- `wrapper/online_visualization.{h,cc}` accepts scans on the existing ordered
+  sensor worker. A one-second wall timer in the ROS executor copies path state
+  under a mutex and serializes it after releasing the lock; this also delivers
+  the final path samples when sensor input stops. Publish only the current
+  deskewed scan, matching LiDAR pose, session
+  path, and `map` → `lightning_lidar` transform. Never publish map/keyframe clouds
+  for this view. Mapping applies the latest keyframe correction and LiDAR
+  extrinsics; localization uses accepted NDT scan poses. Do not use an IMU-time
+  pose to place an earlier scan or publish rejected localization matches.
+- Keep `/lightning/pose` and its existing localization TF behavior unchanged.
+  RViz uses `/lightning/current_pose`, `/lightning/current_scan`,
+  `/lightning/trajectory`, and the separate `/lightning/tf`. Use frame `map` for
+  all three display messages; the dedicated TF child avoids firmware `base_link`
+  conflicts and permits camera following. Remap RViz's TF subscriptions away
+  from firmware topics.
+- Limit pose/scan output to 5 Hz and publish the full retained path at 1 Hz with
+  reliable, transient-local, depth-one QoS. Retain history before a viewer joins;
+  reopening RViz must recover it. History starts over when the application
+  restarts, grows with session duration, and preserves estimates as recorded
+  rather than retrospectively optimizing the trail. Scan output is best effort,
+  depth one, converted only with a subscriber, and RViz uses zero decay so only
+  the latest scan is drawn. Display serialization never modifies estimator clouds.
+- Install `config/onboard.rviz` with the other configuration assets and keep its
+  five-frame-per-second view free of map displays. The new `.rviz` asset is not
+  another sensor preset. Keep RViz2 and xauth in dependency checks for both ROS
+  distributions; audit the offline robot image before adding download steps.
+- Run RViz2 on AOS through standard SSH X11 forwarding; MobaXterm is an optional
+  Windows client, not a software dependency. Preserve DISPLAY and the original
+  user's XAUTHORITY when entering a root shell. Software Mesa, two rendering
+  threads, and disabled MIT-SHM support forwarded displays. Do not expose an
+  unauthenticated X server or replace DISPLAY with a laptop address. X11 drawing
+  traffic still consumes Wi-Fi bandwidth even though ROS scan/map data stays on
+  AOS. Measure the forwarded SSH stream when making bandwidth claims.
+- On standard RK3588, test the application on A76 core 7 and RViz on A76 core 6
+  together with live sensors. Do not change firmware affinity, control services,
+  or sensor clock synchronization. Record input queues, process memory, actual
+  rendered pixels, and display topic/frame/QoS behavior. A stationary hardware
+  check must be paired with moving recorded data to verify a visible route.
+  Measure acquisition cadence, callback arrival intervals, algorithm processing
+  intervals, and actual RViz frame intervals separately. A configured frame-rate
+  cap or a topic frequency does not establish smooth rendering over SSH.
+  A blank nested X desktop is a test harness, never a successful RViz capture;
+  close it between tests and clean up only processes started by the test.

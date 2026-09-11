@@ -21,6 +21,8 @@
 
 namespace lightning {
 
+class OnlineVisualization;
+
 namespace loc {
 class Localization;
 }
@@ -30,6 +32,7 @@ class LocSystem {
     struct Options {
         std::string trajectory_path_;
         bool pub_tf_ = true;  // 是否发布tf
+        bool with_rviz_ = false;
     };
 
     explicit LocSystem(Options options);
@@ -62,6 +65,7 @@ class LocSystem {
 
     /// 实时模式下的ros2 node, subscribers
     rclcpp::Node::SharedPtr node_;
+    std::shared_ptr<OnlineVisualization> rviz_;
     std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_ = nullptr;
 
     std::string imu_topic_;

@@ -43,6 +43,7 @@ add_library(${PROJECT_NAME}.libs SHARED
         core/system/loc_system.cc
 
         wrapper/bag_io.cc
+        wrapper/online_visualization.cc
 )
 
 ament_target_dependencies(
@@ -56,6 +57,7 @@ ament_target_dependencies(
         "message_filters"
         "pcl_conversions"
         "tf2_ros"
+        "tf2_msgs"
         "tf2"
 )
 

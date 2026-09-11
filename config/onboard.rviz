@@ -1,0 +1,92 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Global Options:
+    Background Color: 24; 28; 34
+    Fixed Frame: map
+    Frame Rate: 5
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 1
+      Plane Cell Count: 40
+      Color: 70; 78; 88
+      Alpha: 0.35
+      Reference Frame: <Fixed Frame>
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Current LiDAR
+      Enabled: true
+      Topic:
+        Value: /lightning/current_scan
+        Reliability Policy: Best Effort
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Depth: 1
+      Queue Size: 1
+      Decay Time: 0
+      Style: Points
+      Size (Pixels): 3
+      Position Transformer: XYZ
+      Color Transformer: FlatColor
+      Color: 80; 205; 235
+      Alpha: 1
+      Use Fixed Frame: true
+    - Class: rviz_default_plugins/Pose
+      Name: Current location
+      Enabled: true
+      Topic:
+        Value: /lightning/current_pose
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Depth: 1
+      Shape: Arrow
+      Color: 255; 90; 70
+      Alpha: 1
+      Shaft Length: 0.8
+      Shaft Radius: 0.07
+      Head Length: 0.3
+      Head Radius: 0.15
+    - Class: rviz_default_plugins/Path
+      Name: Whole trajectory
+      Enabled: true
+      Topic:
+        Value: /lightning/trajectory
+        Reliability Policy: Reliable
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Depth: 1
+      Buffer Length: 1
+      Line Style: Lines
+      Color: 255; 215; 70
+      Alpha: 1
+      Pose Style: None
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/SetInitialPose
+      Topic:
+        Value: /lightning/initialpose
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 22
+      Pitch: 0.85
+      Yaw: 0.8
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      Target Frame: lightning_lidar
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+Window Geometry:
+  Width: 1100
+  Height: 750

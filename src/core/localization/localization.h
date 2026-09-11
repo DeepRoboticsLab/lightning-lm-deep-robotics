@@ -83,6 +83,9 @@ class Localization {
 
     void SetTFCallback(TFCallback&& callback);
 
+    using VisualizationCallback = std::function<void(double, const SE3&, const CloudPtr&)>;
+    void SetVisualizationCallback(VisualizationCallback callback) { visualization_callback_ = std::move(callback); }
+
     // void SetPathCallback(std::function<void(const nav_msgs::msg::Path& path)>&& callback);
     // void SetPointcloudWorldCallback(std::function<void(const sensor_msgs::msg::PointCloud2& pointcloud)>&& callback);
     // void SetPointcloudBodyCallback(std::function<void(const sensor_msgs::msg::PointCloud2& pointcloud)>&& callback);
@@ -119,6 +122,7 @@ class Localization {
 
     /// 框架相关
     TFCallback tf_callback_;
+    VisualizationCallback visualization_callback_;
     LocStateCallback loc_state_callback_;
     PointcloudBodyCallback pointcloud_body_callback_;
     PointcloudWorldCallback pointcloud_world_callback_;

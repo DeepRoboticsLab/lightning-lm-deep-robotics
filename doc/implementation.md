@@ -187,6 +187,14 @@ map/trajectory pixels, camera rotation, zoom, and Follow. A blank nested X serve
 window is not a valid visualization test. Offline processing closes the viewer
 after export/completion; online shutdown follows Ctrl+C after explicit saving.
 
+The optional `--rviz` flag on either online application creates the publisher in
+`src/wrapper/online_visualization.cc`. It publishes a deskewed current scan and
+its matching LiDAR pose at up to 5 Hz, plus a retained session path at 1 Hz, without
+publishing map clouds. `config/onboard.rviz` selects those three displays. The
+existing localization pose/TF output and all estimator settings are unchanged.
+The public onboard sections describe SSH X11 forwarding; detailed maintenance
+constraints are in `AGENTS.md`.
+
 ## 7. Map-save contract
 
 Offline mapping saves to `--map_path` at normal bag completion. Online mapping

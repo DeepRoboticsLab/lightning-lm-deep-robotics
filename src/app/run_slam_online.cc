@@ -6,6 +6,7 @@
 
 DEFINE_string(config, "config/m20_pro.yaml", "Sensor configuration YAML (M20 Pro or Mid360)");
 DEFINE_string(map_name, "new_map", "Name of the mapping session");
+DEFINE_bool(rviz, false, "Publish current LiDAR pose, scan and session trajectory for RViz2 (no map)");
 
 int main(int argc, char** argv) {
     google::InitGoogleLogging(argv[0]);
@@ -18,6 +19,7 @@ int main(int argc, char** argv) {
         lightning::YAML_IO yaml(FLAGS_config);
         lightning::SlamSystem::Options options;
         options.online_mode_ = true;
+        options.with_rviz_ = FLAGS_rviz;
         lightning::SlamSystem system(options);
         if (!system.Init(FLAGS_config)) return 1;
         system.StartSLAM(FLAGS_map_name);

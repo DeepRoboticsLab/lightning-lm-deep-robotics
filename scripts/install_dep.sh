@@ -27,6 +27,7 @@ packages=(
     ros-${ROS_DISTRO}-pcl-conversions ros-${ROS_DISTRO}-rosbag2 ros-${ROS_DISTRO}-rosbag2-storage-default-plugins
     ros-${ROS_DISTRO}-rmw-fastrtps-cpp ros-${ROS_DISTRO}-ros2run ros-${ROS_DISTRO}-ros2bag ros-${ROS_DISTRO}-ros2service
     ros-${ROS_DISTRO}-rosidl-default-generators ros-${ROS_DISTRO}-tf2-ros ros-${ROS_DISTRO}-message-filters
+    ros-${ROS_DISTRO}-rviz2 xauth
 )
 missing=()
 for package in "${packages[@]}"; do
