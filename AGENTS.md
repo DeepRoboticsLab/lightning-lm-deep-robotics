@@ -274,6 +274,15 @@ cross-host UDP and new physical-driver deployments still require validation.
   ROS overlay. Build each child environment from the chosen workspace, preserving
   SSH authorization but clearing inherited ROS overlay paths. Do not source the
   Lightning message-only package into the full driver command.
+  Route sourced shell setup output to stderr before executing the child: M20's
+  firmware setup prints network notices on stdout, which must not precede the
+  sensor probe's JSON. Preserve setup exit failures and its environment in the
+  same shell; do not fix parsing by accepting arbitrary trailing JSON lines or
+  by changing firmware DDS files. Exercise noisy and failing setup scripts, plus
+  real sensor delivery on Foxy/M20 and Humble/AGX. Configuration saves settings
+  for launcher children, not the parent terminal. Direct `ros2` commands require
+  sourcing their ROS/DDS environment in that terminal. Topic discovery alone
+  does not demonstrate point-cloud delivery.
 
 ### M20 Pro onboard operation
 

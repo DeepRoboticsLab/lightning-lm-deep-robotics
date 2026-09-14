@@ -198,7 +198,10 @@ def environment(profile, driver=False, viewer=False):
         exports.update(__GLX_VENDOR_LIBRARY_NAME="mesa", LIBGL_ALWAYS_SOFTWARE="1",
                        LP_NUM_THREADS="2", QT_X11_NO_MITSHM="1")
         prelude += "export " + " ".join(k + "=" + shlex.quote(v) for k,v in exports.items()) + "\n"
-    return env, prelude + 'exec "$@"'
+    # Firmware/ROS setup can print notices. Keep those on stderr so a child's
+    # stdout (in particular the sensor probe's JSON) remains machine-readable.
+    # A brace group preserves the sourced environment in this shell.
+    return env, "{\n" + prelude + '} >&2\nexec "$@"'
 
 
 def start(command, profile, driver=False, viewer=False, cpus=None, **kwargs):
@@ -293,7 +296,12 @@ def check_sensors(args, profile):
         out, err = process.communicate(timeout=15)
         if process.returncode:
             raise ValueError("Sensor check failed: " + err.strip())
-        return json.loads(out)
+        try:
+            result = json.loads(out)
+        except json.JSONDecodeError as error:
+            raise ValueError("Sensor check returned invalid JSON. "
+                             "stdout: " + repr(out[:1000]) + "; stderr: " + repr(err[:1000])) from error
+        return result
     finally:
         stop(process)
 

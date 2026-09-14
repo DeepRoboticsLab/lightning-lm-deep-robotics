@@ -414,6 +414,18 @@ Configuration creates `data/onboard.json` for the deployment settings and
 The launcher selects A76 core 7 for estimation and core 6 for RViz. Preserve the
 robot's sensor clock synchronization when setting up live inputs.
 
+`configure m20` saves settings for the onboard commands; it does not change the
+current shell's environment. To use `ros2` directly, source the firmware setup
+in that root terminal first:
+
+```bash
+source /opt/robot/scripts/setup_ros2.sh
+ros2 topic hz /LIDAR/POINTS
+```
+
+Seeing a topic in `ros2 topic list` confirms discovery. Use `status` or `topic hz`
+to check that its messages actually arrive.
+
 The root-shell command preserves SSH's display and X authorization. Keep the
 SSH-assigned `DISPLAY`; do not replace it with the laptop's IP address. RViz2 and
 its ROS subscriptions run on AOS, while SSH forwards the window to the laptop.
