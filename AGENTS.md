@@ -236,6 +236,11 @@ cross-host UDP and new physical-driver deployments still require validation.
   laptop interface or a previous device; verify the target key using the trusted
   jump host's existing record, and use a distinct HostKeyAlias. Preserve old
   known-host records instead of blindly removing mismatches.
+  Show a complete laptop-origin `ssh -Y -C -J ...` command for every additional
+  AGX viewer terminal, without requiring variables from an earlier laptop shell.
+  Check the SSH-assigned DISPLAY before RViz; ROS/config/CPU exports do not add
+  forwarding to an existing plain SSH session. An empty-display xcb error is
+  not evidence that Qt needs reinstalling. Do not substitute :0 or a laptop IP.
 - Keep the full Livox hardware driver in its own sourced workspace. Match the
   launch/configuration to Mid360 versus Mid360s and check the installed config's
   host Ethernet address and sensor IP. A running ROS node alone does not prove

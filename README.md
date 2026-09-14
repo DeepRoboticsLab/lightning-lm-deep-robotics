@@ -456,7 +456,23 @@ ros2 interface show lightning/srv/SaveMap
 ros2 interface show livox_ros_driver2/msg/CustomMsg
 ```
 
-Open another AGX terminal. Set `LIVOX_WS` to the full Livox driver's workspace.
+For each additional AGX terminal, open a **new terminal on your laptop's desktop**
+and connect directly through the robot with X11 forwarding:
+
+```bash
+ssh -Y -C -o HostKeyAlias=lightning-agx -J ysc@192.168.2.1 ysc@192.168.1.45
+```
+
+Use this connection for RViz as well. In the new AGX terminal, check:
+
+```bash
+echo "$DISPLAY"
+```
+
+It should print an SSH-assigned display such as `localhost:10.0`. If it is empty,
+reconnect from the laptop with the command above before opening RViz.
+
+In a separate AGX terminal, set `LIVOX_WS` to the full Livox driver's workspace.
 Check its network configuration uses the AGX's Ethernet address and the connected
 sensor's address, then launch the matching sensor variant:
 
@@ -475,7 +491,8 @@ For a Mid360, use `msg_MID360_launch.py`. A Mid360s requires a driver and Livox 
 that support that variant. Keep the driver running throughout mapping and
 localization.
 
-Run this setup in every AGX application, RViz, and map-save terminal:
+After connecting, run this setup in every AGX application, RViz, and map-save
+terminal. These exports configure ROS; the SSH connection supplies the display:
 
 ```bash
 cd ~/lightning-lm
@@ -517,6 +534,14 @@ Substitute the SSH accounts and addresses for your setup. `HostKeyAlias` keeps
 this AGX's identity separate from a device using the same private IP address on
 another network. Verify the host identity when first connecting or when its key
 changes. Keep SSH's assigned `DISPLAY` and X authorization.
+
+An empty `DISPLAY` causes Qt's `could not connect to display` error and can also
+produce an `xcb` plugin message. Reconnect from the laptop's graphical desktop
+with `ssh -Y -C`; sourcing ROS or selecting software OpenGL cannot add X11
+forwarding to an existing plain SSH session. Do not manually set `DISPLAY` to
+`:0` or to the laptop's address. The direct `-J` command forwards through the
+robot without requiring an X server there. On Windows, start the SSH client's
+X server and enable X11 forwarding before connecting.
 
 The AGX needs the ROS distribution and dependencies from section 1. Once these
 are installed, the source build requires no internet downloads. The robot build
@@ -593,12 +618,14 @@ taskset -c "$LIGHTNING_CPUS" ros2 run lightning run_slam_online --config "$CONFI
 
 ### 7.2 View the location, LiDAR, and trajectory
 
-In another X11-forwarded terminal on the same robot computer, repeat your
-robot's application-terminal setup from section 6, then open RViz2:
+Open a new terminal **on your laptop's desktop** and use your robot's
+`ssh -Y -C` connection command from section 6. In that new AOS or AGX session,
+repeat the application-terminal setup from section 6. Check that `echo "$DISPLAY"`
+prints a value, then open RViz2 from the repository root:
 
 ```bash
 LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=2 QT_X11_NO_MITSHM=1 \
-  taskset -c "$RVIZ_CPUS" rviz2 -d config/onboard.rviz \
+  taskset -c "$RVIZ_CPUS" rviz2 -d "$PWD/config/onboard.rviz" \
   --ros-args -r /tf:=/lightning/tf -r /tf_static:=/lightning/tf_static
 ```
 
@@ -682,13 +709,13 @@ taskset -c "$LIGHTNING_CPUS" ros2 run lightning run_loc_online \
 
 ### 8.2 View the location, LiDAR, and trajectory
 
-Close the mapping RViz window. In another X11-forwarded terminal on the same
-robot computer, repeat your robot's application-terminal setup from section 6,
-then run:
+Close the mapping RViz window. Connect a new viewer terminal from your laptop
+with `ssh -Y -C` and repeat the setup as in section 7.2. Check that
+`echo "$DISPLAY"` prints a value, then run from the repository root:
 
 ```bash
 LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=2 QT_X11_NO_MITSHM=1 \
-  taskset -c "$RVIZ_CPUS" rviz2 -d config/onboard.rviz \
+  taskset -c "$RVIZ_CPUS" rviz2 -d "$PWD/config/onboard.rviz" \
   --ros-args -r /tf:=/lightning/tf -r /tf_static:=/lightning/tf_static
 ```
 
