@@ -1,0 +1,59 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Global Options:
+    Background Color: 24; 28; 34
+    Fixed Frame: lightning_map_view
+    Frame Rate: 5
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 1
+      Plane Cell Count: 40
+      Color: 70; 78; 88
+      Alpha: 0.35
+      Reference Frame: <Fixed Frame>
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Saved map
+      Enabled: true
+      Topic:
+        Value: /lightning/saved_map
+        Reliability Policy: Reliable
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Depth: 1
+      Queue Size: 1
+      Decay Time: 0
+      Style: Points
+      Size (Pixels): 2
+      Position Transformer: XYZ
+      Color Transformer: FlatColor
+      Color: 80; 205; 235
+      Alpha: 1
+      Use Fixed Frame: true
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 22
+      Pitch: 0.85
+      Yaw: 0.8
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      Target Frame: lightning_map_view
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+Window Geometry:
+  Width: 1100
+  Height: 750

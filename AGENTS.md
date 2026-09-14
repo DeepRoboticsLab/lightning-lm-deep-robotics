@@ -18,9 +18,11 @@ closed-by-default `<details>` subsections. Keep development dates, branch names,
 historical experiments, machine-specific paths, and long logs out of the README.
 Maintain the text-free seven-panel header image; never synthesize, warp, or
 selectively clean point clouds to improve the reported result.
-Keep robot-specific connection, driver, calibration and environment setup in
-README section 6, including a Lite3 EDU with AGX subsection. Sections 7 and 8
-share mapping/localization commands using the exported `CONFIG` and CPU settings;
+Keep source transfer, compilation and installation in README section 5, with
+separate M20 Pro/AOS and Lite3 EDU/AGX subsections. Keep robot-specific connection,
+driver, calibration and environment setup in README section 6, including one combined Lite3 EDU with AGX/Mid360 subsection. Sections 7 and 8
+share mapping/localization commands through `scripts/onboard.py`, which loads
+the saved sensor configuration and runtime settings for every invocation;
 do not add separate per-robot mapping/localization chapters. Integrate durable
 maintenance notes into the corresponding existing sections of this file.
 
@@ -39,8 +41,11 @@ deleted experiments over the user's work. Use isolated worktrees for historical
 comparisons and record which binary/configuration actually ran.
 
 Production entry points are the four `src/app/run_{slam,loc}_{offline,online}.cc`
-programs. The supported scripts are `scripts/install_dep.sh`, `scripts/build.sh`,
-`scripts/build_robot.sh`, and `scripts/setup.bash`. Keep experimental runners,
+programs. `src/app/publish_map.cc` is a read-only saved-PCD display utility and
+`src/app/run_rviz.cc` launches the installed RViz components with controlled
+render-timer shutdown. Neither is another estimator. The supported scripts are `scripts/install_dep.sh`,
+`scripts/build.sh`, `scripts/build_robot.sh`, `scripts/setup.bash`, and
+`scripts/onboard.py`. Keep experimental runners,
 screenshot/render scripts, profiling helpers, temporary test programs, and unrelated configs out of the
 published tree. Keep new investigation reports, verification records, images,
 logs, maps, and binaries in ignored `outputs/` or external directories, and
@@ -102,6 +107,7 @@ Audit the target first and bundle any actually missing packages with the sources
 for a deployment that needs them. The source archive must
 contain the bundled Pangolin ZIP, Sophus, Miao, and message/service definitions,
 and exclude laptop build products.
+Exclude Python `__pycache__` directories and `.pyc` files from source transfers.
 
 `build_robot.sh` detects RK3588 through device-tree compatibility and leases CPUs
 4–7 to individual compiler children with `flock`/`taskset` for both Pangolin and
@@ -245,10 +251,29 @@ cross-host UDP and new physical-driver deployments still require validation.
   launch/configuration to Mid360 versus Mid360s and check the installed config's
   host Ethernet address and sensor IP. A running ROS node alone does not prove
   packets are being received. Preserve pre-existing driver/configuration edits.
+  Live AGX mapping and localization require both Livox streams. Start one driver
+  before the algorithm and keep it running across sessions; restart it only after
+  it stops or the AGX reboots. Do not launch a duplicate for every SLAM/loc run.
+  The onboard launcher checks actual raw-message delivery and refuses to replace
+  a discovered publisher whose streams are missing. Saved-map viewing needs no
+  hardware driver or estimator process.
 - An independent all-on-AGX pipeline can use ROS_DOMAIN_ID=42 and
   ROS_LOCALHOST_ONLY=1 in driver, application, service and RViz terminals. This
   isolates DDS from robot firmware while the hardware driver receives Ethernet
   packets. Start one owned driver instance and stop only owned test processes.
+- Configure `scripts/onboard.py` once per deployment. Both M20 and AGX use the same
+  single configuration command with their platform name. For a new AGX profile,
+  discover a unique built full Livox workspace under the user home directory;
+  require an explicit path when none or several match. Never select this repo's
+  message-only package as the driver. It stores local settings in
+  ignored `data/onboard.json` and sensor parameters in `data/onboard.yaml`, loading
+  them automatically for driver, algorithm, service and RViz commands. Repeated
+  configuration preserves the runtime YAML unless `--config` explicitly replaces
+  its calibration. Do not persist DISPLAY/XAUTHORITY or edit shell startup files:
+  X11 belongs to the current SSH connection, and the full driver needs its own
+  ROS overlay. Build each child environment from the chosen workspace, preserving
+  SSH authorization but clearing inherited ROS overlay paths. Do not source the
+  Lightning message-only package into the full driver command.
 
 ### M20 Pro onboard operation
 
@@ -265,8 +290,8 @@ cross-host UDP and new physical-driver deployments still require validation.
   README, alongside the recorded-data workflows. Both use the same online
   executables, sensor presets, and tiled-map format. The headless runtime copy
   changes only `system.with_ui`; do not add separate production SLAM/loc presets.
-  Export `CONFIG`, `LIGHTNING_CPUS=7` and `RVIZ_CPUS=6` during M20 preparation;
-  AGX preparation retains its inherited CPU set and selects software Mesa.
+  The saved M20 profile selects estimation CPU 7 and RViz CPU 6;
+  the AGX profile retains its inherited CPU set and selects software Mesa.
   When consulting another branch's hardware guide, verify commands against this
   branch's executables, services, and topics before documenting them.
 - Keep firmware drivers and control services running. The firmware already
@@ -410,3 +435,40 @@ experiments, and the distinction between historical proposals and completed work
   LIBGL_ALWAYS_SOFTWARE=1, LP_NUM_THREADS=2 and QT_X11_NO_MITSHM=1. Inspect real
   scan/arrow/path pixels and frame timing after initialization. Preserve the
   existing display rates, QoS, full-session trajectory and absence of map topics.
+- `onboard.py rviz` loads the same saved environment as the algorithm and checks
+  for an SSH display before launching Qt. `onboard.py rviz --map DIRECTORY`
+  instead starts the independent `publish_map` utility and `saved_map.rviz` on
+  the robot. Keep this saved-map mode separate from the live scan/path publishers;
+  it does not request live map export or modify the estimator's keyframes.
+  Saved-map viewers use unique cloud and static-TF topics, reliable transient-local
+  depth-one QoS, cloud frame `map`, and a camera fitted to full finite cloud bounds.
+  A private `lightning_map_view` parent frame makes standalone RViz valid without
+  a running estimator. Display at most
+  500,000 uniformly sampled XYZ points (under 8 MiB per message), reporting input,
+  finite and displayed counts. Preserve the source PCD bytes and coordinates.
+  Validate malformed/empty maps, late subscribers, large messages, actual pixels,
+  source hashes and cleanup of both owned processes when the viewer closes.
+  This display sampling is not a map-quality improvement or an exported map.
+  Launch RViz through `run_rviz`, using the installed RViz libraries and plugins.
+  Stop its render timer before dispatching window-close events (including the
+  nested save-dialog event loop) and on application shutdown. Restart the timer
+  if closing is canceled. Forwarded Mesa/X11 can otherwise crash in XPutImage
+  while OGRE swaps a frame during teardown; changing software renderers did not
+  resolve it. Preserve failed evidence and report abnormal child exits. Verify
+  window close, canceled close, Ctrl+C and SSH hangup, including large maps and
+  cleanup of both owned processes. Keep Qt5/RViz APIs compatible with Foxy and
+  Humble; do not replace system graphics libraries as a speculative fix.
+  The launcher records a stable IMU mean before mapping starts, while the user
+  holds the robot stationary. The estimator initializes its rotation to identity
+  and represents gravity in those initial IMU axes; it does not make map Z vertical.
+  Save the normalized upward vector in `map_view.json`, bound to the saved PCD hash,
+  only for the same active launcher session (verify PID and process start identity).
+  Apply the resulting rigid rotation through the viewer's private static TF;
+  preserve cloud bytes, all tiles, poses and internal-IMU extrinsics. No floor fit
+  or planar estimator constraint may determine this rotation. Older maps need an
+  explicitly measured map-frame upward vector or retain their original frame.
+  Never apply current IMU gravity blindly to a map from another initial attitude.
+  A body mounting URDF and a LiDAR-to-internal-IMU calibration are different
+  transforms. Check URDF axes/direction against measured gravity before claiming
+  body alignment makes a map level; diagnose disagreement instead of rotating
+  the estimator calibration to make surfaces look flat.

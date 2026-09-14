@@ -12,7 +12,7 @@ Supports **Ubuntu 20.04 / ROS 2 Foxy** and **Ubuntu 22.04 / ROS 2 Humble**.
 Use an OpenGL desktop for visualization. For an M20 Pro without internet access,
 follow [onboard deployment](#5-deploy-from-a-laptop-to-the-robot).
 For a Jetson AGX using Livox LiDAR and its internal IMU, follow
-[Lite3 EDU with AGX setup](#63-lite3-edu-with-agx).
+[Lite3 EDU with AGX setup](#62-lite3-edu-with-agx-mid360).
 Run these commands from the repository root in a fresh Bash terminal:
 
 ```bash
@@ -228,22 +228,25 @@ names, extrinsics, and the saved map must match the selected sensor setup.
 
 ## 5. Deploy from a laptop to the robot
 
-Download the repository on your laptop, transfer the sources to AOS, and compile
-and install there. This uses the standard M20 Pro AOS environment with
-Ubuntu 20.04 / Foxy; AOS does not need an external internet connection.
+Download the repository on your laptop, transfer the sources to the robot
+computer, then compile and install there. Use section 5.2 for M20 Pro/AOS or
+section 5.3 for Lite3 EDU/AGX. With the standard dependencies installed, the robot
+does not need an external internet connection.
 
-### 5.1 Laptop: download and transfer the sources
+### 5.1 Laptop: prepare the source archive
 
 Download this repository using **Code → Download ZIP** and extract it on your
 laptop, or use your existing Git checkout. Open a Bash terminal in its root
 and create a source archive:
 
 ```bash
-tar -czf /tmp/lightning-source.tar.gz \
+tar -czf /tmp/lightning-source.tar.gz --exclude='__pycache__' --exclude='*.pyc' \
   CMakeLists.txt package.xml cmake config scripts src srv \
   thirdparty/Pangolin-0.9.3.zip thirdparty/Sophus thirdparty/livox_ros_driver \
   README.md AGENTS.md LICENSE.txt doc
 ```
+
+### 5.2 M20 Pro (AOS)
 
 Connect the laptop to the robot network. Set `AOS` to the robot's address and
 transfer the archive:
@@ -256,9 +259,7 @@ ssh "user@$AOS"
 
 When using the additional network adapter, use `export AOS=10.21.41.1` instead.
 
-### 5.2 AOS: compile and install Lightning-LM
-
-In the SSH terminal, extract into a new deployment directory and build:
+In the AOS terminal, extract into a new deployment directory and build:
 
 ```bash
 mkdir -p ~/lightning-lm
@@ -280,8 +281,38 @@ Continue with [sensor preparation](#61-m20-pro),
 [onboard mapping](#7-onboard-mapping), and
 [onboard localization](#8-onboard-localization).
 
+### 5.3 Lite3 EDU with AGX
+
+On the laptop, transfer the source archive from section 5.1 through the robot:
+
+```bash
+export JUMP=ysc@192.168.2.1
+export AGX=ysc@192.168.1.45
+scp -o HostKeyAlias=lightning-agx -J "$JUMP" \
+  /tmp/lightning-source.tar.gz "$AGX:~/"
+ssh -Y -C -o HostKeyAlias=lightning-agx -J "$JUMP" "$AGX"
+```
+
+In the AGX terminal, compile and install:
+
+```bash
+mkdir -p ~/lightning-lm
+tar -xzf ~/lightning-source.tar.gz --touch -C ~/lightning-lm
+cd ~/lightning-lm
+source /opt/ros/humble/setup.bash
+bash scripts/build_robot.sh
+source scripts/setup.bash
+ros2 pkg executables lightning
+ros2 interface show lightning/srv/SaveMap
+ros2 interface show livox_ros_driver2/msg/CustomMsg
+```
+
+Continue with [AGX sensor preparation](#62-lite3-edu-with-agx-mid360),
+[onboard mapping](#7-onboard-mapping), and
+[onboard localization](#8-onboard-localization).
+
 <details>
-<summary>5.3 Build settings and subsequent code updates</summary>
+<summary>5.4 Build settings and subsequent code updates</summary>
 
 On RK3588, the robot build script distributes compiler jobs across the four A76
 cores and runs compilation at reduced scheduling priority. It reduces the default
@@ -296,7 +327,7 @@ bash scripts/build_robot.sh --check
 ```
 
 Keep `build`, `build-pangolin`, `.deps`, and `install` for subsequent builds.
-After transferring changed sources, rebuild from the same AOS directory:
+After transferring changed sources, rebuild from the same robot directory:
 
 ```bash
 bash scripts/build_robot.sh
@@ -312,8 +343,8 @@ CMAKE_BUILD_PARALLEL_LEVEL=2 bash scripts/build_robot.sh
 
 The source archive works with a downloaded ZIP or Git checkout and includes
 local source edits and all bundled source dependencies. Laptop build products
-are excluded; AOS produces native ARM binaries. The `--touch` extraction option
-gives transferred source files AOS's current modification time. Preserve the
+are excluded; the robot produces native ARM binaries. The `--touch` extraction
+option gives transferred source files the robot's current modification time. Preserve the
 robot's sensor clock synchronization and existing build-product timestamps.
 
 </details>
@@ -348,41 +379,27 @@ On Windows, use an SSH client with an X server, such as MobaXterm, and enable
 SSH client.
 
 Complete [onboard deployment](#5-deploy-from-a-laptop-to-the-robot), then change
-to that repository directory on AOS and prepare a root shell:
+to that repository directory on AOS. Enter a root shell and configure this
+deployment **once**:
 
 ```bash
+cd ~/lightning-lm
 sudo env DISPLAY="$DISPLAY" XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}" bash
 source /opt/robot/scripts/setup_ros2.sh
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/config/fastdds.xml"
-source scripts/setup.bash
+python3 scripts/onboard.py configure m20
 ```
 
-Prepare a runtime copy that disables the built-in map viewer. The onboard
-commands below enable the separate RViz2 view:
+Check live LiDAR and IMU delivery:
 
 ```bash
-mkdir -p data
-cp config/m20_pro.yaml data/m20_pro_headless.yaml
-sed -i 's/with_ui: true/with_ui: false/' data/m20_pro_headless.yaml
-export CONFIG="$PWD/data/m20_pro_headless.yaml"
-export LIGHTNING_CPUS=7
-export RVIZ_CPUS=6
-```
-
-Check each sensor topic, stopping each command with **Ctrl+C**:
-
-```bash
-ros2 topic hz /LIDAR/POINTS
-ros2 topic hz /IMU
+python3 scripts/onboard.py status
 ```
 
 Keep the firmware sensor publishers running. Continue with
 [onboard mapping](#7-onboard-mapping) or
 [onboard localization](#8-onboard-localization).
-Repeat the root-shell setup and export `CONFIG`, `LIGHTNING_CPUS`, and
-`RVIZ_CPUS` in every AOS application, RViz, or service terminal. Create the
-runtime copy only once.
+In later AOS terminals, enter the same root shell from the deployment directory.
+The onboard commands load the saved configuration and ROS settings automatically.
 
 <details>
 <summary>6.1.1 Relay and runtime configuration</summary>
@@ -390,10 +407,12 @@ runtime copy only once.
 To start the relay automatically after reboot, run
 `sudo systemctl enable multicast-relay.service` on NOS.
 
-The runtime copy changes only `system.with_ui`; sensor calibration and estimator
-settings remain the same as `config/m20_pro.yaml`. Use the same copy for mapping
-and localization. Preserve the robot's sensor clock synchronization when setting
-up live inputs.
+Configuration creates `data/onboard.json` for the deployment settings and
+`data/onboard.yaml` for the sensor settings. The M20 runtime copy changes only
+`system.with_ui`; its calibration and estimator settings remain the same as
+`config/m20_pro.yaml`. Mapping, localization, and RViz all load the saved settings.
+The launcher selects A76 core 7 for estimation and core 6 for RViz. Preserve the
+robot's sensor clock synchronization when setting up live inputs.
 
 The root-shell command preserves SSH's display and X authorization. Keep the
 SSH-assigned `DISPLAY`; do not replace it with the laptop's IP address. RViz2 and
@@ -408,55 +427,15 @@ for forwarded displays. MobaXterm also provides OpenGL settings under
 
 </details>
 
-### 6.2 Mid360
-
-Start the hardware driver from its own workspace. This repository includes Livox
-message definitions; install and launch the full Mid360 driver separately.
-For AGX deployment and internal-IMU calibration, see
-[Lite3 EDU with AGX](#63-lite3-edu-with-agx).
-In the driver's sourced terminal, set the following before launching it, using
-this repository's location:
-
-```bash
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-export FASTRTPS_DEFAULT_PROFILES_FILE="/path/to/lightning-lm-deep-robotics/config/fastdds.xml"
-```
-
-Keep the driver's existing reliability setting. Lightning-LM uses **best-effort**
-subscriptions and accepts either best-effort or reliable sensor publishers.
-
-### 6.3 Lite3 EDU with AGX
+### 6.2 Lite3 EDU with AGX (Mid360)
 
 Connect through the robot to run Lightning-LM and RViz2 on the AGX, using
 the Livox sensor's **internal IMU**. Ubuntu displays the forwarded window
 through standard SSH; MobaXterm is optional on Windows.
 
-Create `/tmp/lightning-source.tar.gz` using the archive command in section 5.1,
-then transfer it through the robot:
+Complete [AGX deployment](#53-lite3-edu-with-agx) first.
 
-```bash
-export JUMP=ysc@192.168.2.1
-export AGX=ysc@192.168.1.45
-scp -o HostKeyAlias=lightning-agx -J "$JUMP" \
-  /tmp/lightning-source.tar.gz "$AGX:~/"
-ssh -Y -C -o HostKeyAlias=lightning-agx -J "$JUMP" "$AGX"
-```
-
-In the AGX terminal, compile and install:
-
-```bash
-mkdir -p ~/lightning-lm
-tar -xzf ~/lightning-source.tar.gz --touch -C ~/lightning-lm
-cd ~/lightning-lm
-source /opt/ros/humble/setup.bash
-bash scripts/build_robot.sh
-source scripts/setup.bash
-ros2 pkg executables lightning
-ros2 interface show lightning/srv/SaveMap
-ros2 interface show livox_ros_driver2/msg/CustomMsg
-```
-
-For each additional AGX terminal, open a **new terminal on your laptop's desktop**
+For each AGX application or viewer terminal, open a **new terminal on your laptop's desktop**
 and connect directly through the robot with X11 forwarding:
 
 ```bash
@@ -472,62 +451,41 @@ echo "$DISPLAY"
 It should print an SSH-assigned display such as `localhost:10.0`. If it is empty,
 reconnect from the laptop with the command above before opening RViz.
 
-In a separate AGX terminal, set `LIVOX_WS` to the full Livox driver's workspace.
-Check its network configuration uses the AGX's Ethernet address and the connected
-sensor's address, then launch the matching sensor variant:
-
-```bash
-export LIVOX_WS="/path/to/livox_driver_workspace"
-source /opt/ros/humble/setup.bash
-source "$LIVOX_WS/install/setup.bash"
-export ROS_DOMAIN_ID=42
-export ROS_LOCALHOST_ONLY=1
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-export FASTRTPS_DEFAULT_PROFILES_FILE="$HOME/lightning-lm/config/fastdds.xml"
-ros2 launch livox_ros_driver2 msg_MID360s_launch.py
-```
-
-For a Mid360, use `msg_MID360_launch.py`. A Mid360s requires a driver and Livox SDK
-that support that variant. Keep the driver running throughout mapping and
-localization.
-
-After connecting, run this setup in every AGX application, RViz, and map-save
-terminal. These exports configure ROS; the SSH connection supplies the display:
+In the AGX repository directory, configure this deployment **once**. The same
+launcher used for M20 Pro finds the installed full Livox driver workspace:
 
 ```bash
 cd ~/lightning-lm
-source scripts/setup.bash
-export ROS_DOMAIN_ID=42
-export ROS_LOCALHOST_ONLY=1
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/config/fastdds.xml"
-export CONFIG="$PWD/data/mid360_internal_imu.yaml"
-export LIGHTNING_CPUS="$(awk '/Cpus_allowed_list/ {print $2}' /proc/self/status)"
-export RVIZ_CPUS="$LIGHTNING_CPUS"
-export __GLX_VENDOR_LIBRARY_NAME=mesa
+python3 scripts/onboard.py configure agx
 ```
 
-Create the runtime configuration once. This uses the Livox manual's internal IMU
-calibration and disables the built-in map viewer:
+Before live mapping or localization, start the LiDAR driver in a separate AGX
+terminal and leave it running:
 
 ```bash
-python3 - <<'PYCONFIG'
-from pathlib import Path
-import yaml
-config = yaml.safe_load(Path("config/mid360.yaml").read_text())
-config["system"]["with_ui"] = False
-config["fasterlio"]["extrinsic_T"] = [-0.011, -0.02329, 0.04412]
-config["fasterlio"]["extrinsic_R"] = [1, 0, 0, 0, 1, 0, 0, 0, 1]
-Path("data").mkdir(exist_ok=True)
-Path("data/mid360_internal_imu.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
-PYCONFIG
+cd ~/lightning-lm
+python3 scripts/onboard.py lidar
+```
+
+The driver supplies **both LiDAR and the internal IMU**. One running driver can
+serve successive mapping and localization sessions; you do not restart it for
+each algorithm run. Start it again after it stops or the AGX reboots. If both
+streams are already arriving, the command reuses the existing driver.
+
+In later AGX application or RViz terminals, change to `~/lightning-lm` and use the
+commands below. They load the saved sensor configuration, ROS domain, middleware,
+CPU settings, and visualization environment automatically. No repeated exports or
+`source` commands are needed. RViz still requires the X11-forwarded SSH connection.
+
+```bash
+python3 scripts/onboard.py status
 ```
 
 Continue with [onboard mapping](#7-onboard-mapping) and
-[onboard localization](#8-onboard-localization), using the exported `CONFIG`.
+[onboard localization](#8-onboard-localization).
 
 <details>
-<summary>6.3.1 Network and internal-IMU calibration</summary>
+<summary>6.2.1 Driver setup, network and internal-IMU calibration</summary>
 
 The jump host forwards SSH to the AGX; it does not run Lightning-LM or RViz.
 Substitute the SSH accounts and addresses for your setup. `HostKeyAlias` keeps
@@ -546,11 +504,13 @@ X server and enable X11 forwarding before connecting.
 The AGX needs the ROS distribution and dependencies from section 1. Once these
 are installed, the source build requires no internet downloads. The robot build
 script selects up to four jobs according to available RAM. AGX compilation and
-runtime use its available CPUs. `LIGHTNING_CPUS` and `RVIZ_CPUS` retain the AGX
-shell's allowed CPU set; the M20 Pro settings select its A76 cores instead.
+runtime use its available CPUs. The saved AGX profile retains the shell's allowed
+CPU set; the M20 profile selects its A76 cores. The onboard launcher is compatible
+with the supported Ubuntu 20.04/Foxy and Ubuntu 22.04/Humble installations.
 
 ROS domain 42 and `ROS_LOCALHOST_ONLY=1` keep this pipeline on the AGX. Use the
-same settings in every participating terminal. The Livox driver still receives
+same settings for every participant; the launcher applies them to the driver,
+applications, and viewers. The Livox driver still receives
 sensor packets over Ethernet. RViz subscribes locally, while SSH carries window
 drawing traffic over Wi-Fi. The software Mesa settings support the forwarded
 window on Jetson; window size and refresh rate affect bandwidth.
@@ -563,15 +523,48 @@ metres in LiDAR coordinates. Lightning-LM uses `p_imu = R * p_lidar + T`, so the
 runtime translation has the opposite sign. Keep the driver's point-cloud
 extrinsic transform at identity when using these values.
 
-A robot URDF's LiDAR-to-body mounting describes a separate transform. Apply it
-when converting the estimated sensor pose to the robot body frame. The runtime
-copy leaves the shared recording preset intact and changes only calibration and
-the built-in viewer setting. Mapping and localization must use the same copy.
+The one-time command saves deployment settings in `data/onboard.json` and creates
+`data/onboard.yaml` from `config/mid360.yaml`, selecting the internal-IMU transform
+and disabling Pangolin. These generated files stay local to the robot. Later
+commands load them automatically without modifying shell startup files or saving
+SSH's session-specific `DISPLAY`.
+
+The full Livox hardware driver must already be built in its own workspace.
+Lightning-LM bundles message definitions, not the hardware driver. Configuration
+searches the home directory for one installed workspace with the selected launch
+file and remembers its location. If the driver is elsewhere or several workspaces
+are installed, select it explicitly:
+
+```bash
+python3 scripts/onboard.py configure agx --driver-workspace /path/to/livox_driver_workspace
+```
+
+For a Mid360 on another computer, launch the full driver in its own sourced
+workspace with the same ROS domain and Fast DDS profile as Lightning-LM. Keep its
+existing reliability setting: Lightning-LM's best-effort subscriptions accept
+either best-effort or reliable publishers.
+
+The default driver launch is `msg_MID360s_launch.py`. For an original Mid360,
+configure with `--driver-model mid360`. The selected full driver and Livox SDK
+must support that sensor variant. The launcher sources the full driver workspace
+separately from Lightning-LM's message-only package.
+
+Repeating `configure` preserves an existing runtime YAML. To select another
+calibration, pass `--config /path/to/calibrated_sensor.yaml`; the launcher copies
+it and disables only Pangolin. A robot URDF's LiDAR-to-body mounting is a separate
+transform, applied when converting sensor estimates to body coordinates. The
+shared recording preset remains unchanged. Both algorithms use the same saved
+runtime configuration.
+
+The launcher checks that both sensor streams are arriving before starting live
+mapping or localization. Discovery alone is insufficient. `status` reports the
+received counts and topic publishers; if a publisher exists but a stream is
+missing, inspect its network configuration instead of starting another driver.
 
 </details>
 
 <details>
-<summary>6.4 Best-effort DDS and the larger shared-memory buffer</summary>
+<summary>6.3 Best-effort DDS and the larger shared-memory buffer</summary>
 
 Best effort avoids waiting for retransmission of missing samples. Adequate
 processing capacity and buffering still matter; delivery is not guaranteed.
@@ -604,29 +597,28 @@ CPU overload.
 ## 7. Onboard mapping
 
 Complete your robot's setup in [section 6](#6-connect-to-robots-and-sensor-drivers),
-then run from the repository root on AOS or AGX using its exported `CONFIG`
-and CPU settings. Keep the robot standing during initialization and leave
-the sensor publishers running.
+then run from the repository root on AOS or AGX. The commands load the saved
+configuration automatically. Keep the robot standing during initialization and
+leave the sensor driver running; on AGX, start it with `onboard.py lidar` first.
 
 ### 7.1 Start mapping
 
 In the prepared application terminal:
 
 ```bash
-taskset -c "$LIGHTNING_CPUS" ros2 run lightning run_slam_online --config "$CONFIG" --rviz
+python3 scripts/onboard.py slam
 ```
 
 ### 7.2 View the location, LiDAR, and trajectory
 
 Open a new terminal **on your laptop's desktop** and use your robot's
 `ssh -Y -C` connection command from section 6. In that new AOS or AGX session,
-repeat the application-terminal setup from section 6. Check that `echo "$DISPLAY"`
-prints a value, then open RViz2 from the repository root:
+enter the deployment directory (and the root shell on M20). Check that
+`echo "$DISPLAY"` prints a value, then open RViz2. The command loads the same
+saved settings automatically:
 
 ```bash
-LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=2 QT_X11_NO_MITSHM=1 \
-  taskset -c "$RVIZ_CPUS" rviz2 -d "$PWD/config/onboard.rviz" \
-  --ros-args -r /tf:=/lightning/tf -r /tf_static:=/lightning/tf_static
+python3 scripts/onboard.py rviz
 ```
 
 The window shows the **current LiDAR scan**, a **red location arrow**, and the
@@ -635,11 +627,11 @@ mapping starts and still see the trajectory recorded since startup.
 
 ### 7.3 Save the map
 
-In another terminal on the same robot computer, repeat your robot's
-application-terminal setup from section 6, then save to a new map directory:
+In another terminal on the same robot computer, enter the deployment directory
+(and the root shell on M20), then save to a new map directory:
 
 ```bash
-ros2 service call /lightning/save_map lightning/srv/SaveMap "{map_id: onboard_map}"
+python3 scripts/onboard.py save onboard_map
 ```
 
 Wait for `response: 0` before pressing **Ctrl+C** in the mapping terminal.
@@ -682,41 +674,92 @@ and connection; reduce the setting or shrink the window on a slower connection.
 
 ### 7.5 View a saved map separately
 
-On a computer with a display, copy the complete map directory into
-`data/onboard_map/` if needed, then open the saved cloud:
+In an X11-forwarded terminal on the robot, open the saved map in RViz2:
 
 ```bash
-pcl_viewer data/onboard_map/global.pcd -ps 2
+python3 scripts/onboard.py rviz --map data/onboard_map
 ```
+
+The map loads and renders on the robot; SSH forwards the window to your laptop.
+This view works without the driver, mapping, or localization running. Close the
+window or press **Ctrl+C in the viewer terminal** to stop RViz and its map publisher.
+Maps saved with the onboard commands use
+their recorded startup gravity direction to display horizontally. The live
+scan/path view in section 7.2
+continues to omit map clouds.
+
+<details>
+<summary>7.5.1 Saved-map display settings</summary>
+
+Pass a saved map directory or a `.pcd` file. The viewer fits its camera to the
+cloud bounds and publishes a retained XYZ cloud in frame `map`. Each viewer has
+its own cloud and display-transform topics, so opening another saved map does
+not replace an existing view or require the SLAM node to publish TF.
+
+Keep the robot stationary when starting mapping. The launcher records the IMU's
+upward direction before initialization and saves it in `map_view.json` alongside
+the map. RViz uses that map's reference to rotate the display into a gravity-aligned
+frame. The PCD files, localization tiles, estimated poses and sensor calibration
+retain their original coordinates. Keep the sidecar with the map; its PCD hash
+prevents accidentally applying a reference from another map.
+
+A mounting URDF defines sensor-to-body geometry. It does not by itself make a
+map horizontal: its axes must match the driver, and the body can be tilted. Do not
+replace the LiDAR-to-internal-IMU calibration with a body mounting rotation.
+Leveling uses measured gravity, not a fitted floor plane or a constraint on 3D
+estimation. To inspect the original map frame:
+
+```bash
+python3 scripts/onboard.py rviz --map data/onboard_map --original-frame
+```
+
+Older maps without `map_view.json` use their original frame. If an upward vector
+was measured in that map's initial IMU frame, supply it with `--up X Y Z`. Do not
+use the robot's current IMU direction for a map recorded at a different attitude.
+The saved-map alignment does not change the live scan/path view.
+If RViz asks to save display changes when closing, choose **Discard**; this prompt
+concerns the temporary viewer configuration, not the map files.
+Close the viewer before ending the SSH session.
+
+The display uniformly samples large clouds to at most 500,000 points, keeping
+each message below the supplied 8 MiB transport limit. It reports input, finite,
+and displayed point counts; the saved files are read without modification. To
+reduce rendering load, use a smaller display budget:
+
+```bash
+python3 scripts/onboard.py rviz --map data/onboard_map --max-points 100000
+```
+
+Map data stays on the robot, but X11 drawing still uses Wi-Fi bandwidth. Rotate,
+pan, and zoom in RViz as needed. This is a saved-map view; it does not display the
+map as SLAM builds it. Saved maps from recorded-data workflows can be viewed the
+same way once their files are on the robot.
+
+</details>
 
 ## 8. Onboard localization
 
-Stop mapping first. Repeat your robot's application-terminal setup from
-[section 6](#6-connect-to-robots-and-sensor-drivers) and run from the repository
-root on AOS or AGX. Use the same exported `CONFIG` as mapping.
+Stop mapping first. Run from the repository root on AOS or AGX after the
+one-time setup in [section 6](#6-connect-to-robots-and-sensor-drivers). Localization
+loads the same saved configuration as mapping. Keep the sensor driver running;
+on AGX, use `onboard.py lidar` if it has stopped.
 
 ### 8.1 Load the map and start localization
 
-Use the map saved in section 7, or set `MAP` to an existing complete map directory:
+Use the map saved in section 7, or substitute an existing complete map directory:
 
 ```bash
-export MAP="$PWD/data/onboard_map"
-taskset -c "$LIGHTNING_CPUS" ros2 run lightning run_loc_online \
-  --config "$CONFIG" --map_path "$MAP" --rviz \
-  --trajectory "$PWD/localization_onboard.tum" \
-  -- --ros-args -r /tf:=/lightning/tf -r /initialpose:=/lightning/initialpose
+python3 scripts/onboard.py localize data/onboard_map
 ```
 
 ### 8.2 View the location, LiDAR, and trajectory
 
 Close the mapping RViz window. Connect a new viewer terminal from your laptop
-with `ssh -Y -C` and repeat the setup as in section 7.2. Check that
-`echo "$DISPLAY"` prints a value, then run from the repository root:
+with `ssh -Y -C` as in section 7.2. Check that `echo "$DISPLAY"` prints a value,
+then run from the repository root; the saved settings load automatically:
 
 ```bash
-LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=2 QT_X11_NO_MITSHM=1 \
-  taskset -c "$RVIZ_CPUS" rviz2 -d "$PWD/config/onboard.rviz" \
-  --ros-args -r /tf:=/lightning/tf -r /tf_static:=/lightning/tf_static
+python3 scripts/onboard.py rviz
 ```
 
 The same view shows the current scan, location arrow, and full localization
@@ -725,7 +768,7 @@ trajectory. The reference map is used onboard without displaying it in RViz2.
 ### 8.3 Stop localization
 
 Press **Ctrl+C** in the localization terminal when finished, then close RViz2.
-Valid localization poses are written to `localization_onboard.tum`; the reference
+Valid localization poses are written to `data/localization_onboard.tum`; the reference
 map is preserved. Stop the Livox driver you launched when finished with both
 workflows; leave the robot's firmware sensor and control services running.
 
@@ -748,10 +791,10 @@ initialization succeeds they remain empty; if matching fails they retain the las
 valid display until a new match succeeds. Check the localization terminal when
 the display stops updating.
 
-M20 Pro firmware already publishes transforms on `/tf`. The shared command above
-publishes Lightning-LM's `map` → `base_link` transform on `/lightning/tf` and
-receives initial poses on `/lightning/initialpose`. Pose output remains on
-`/lightning/pose`. The `--` separator before `--ros-args` is required.
+M20 Pro firmware already publishes transforms on `/tf`. The launcher remaps
+Lightning-LM's `map` → `base_link` transform to `/lightning/tf` and initial-pose
+input to `/lightning/initialpose`. Pose output remains on `/lightning/pose`.
+The underlying online executable still accepts the same flags for direct use.
 
 The display topics are `/lightning/current_pose`, `/lightning/current_scan`, and
 `/lightning/trajectory`, in frame `map`. The separate visualization transform is
