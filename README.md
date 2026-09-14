@@ -2,9 +2,13 @@
 
 ![Seven 3D reconstructions](doc/images/seven-datasets-overview.png)
 
-3D LiDAR mapping and localization for **Deep Robotics M20 Pro** and **Livox Mid360**.
+3D LiDAR mapping and localization for **Deep Robotics M20 Pro** and
+**Lite3 EDU with Jetson AGX and Livox Mid360**.
 Build maps with loop closure, view reconstruction live, and localize against saved
 point clouds. Both sensor presets use the same four online and offline applications.
+
+When using an AI coding assistant, ask it to read [AGENTS.md](AGENTS.md) first
+for repository rules, robot setup constraints, and verification requirements.
 
 ## 1. Install and build
 
@@ -68,7 +72,7 @@ For headless operation, set `system.with_ui: false` in the selected configuratio
 | Sensor system | Configuration | LiDAR input | IMU input |
 |---|---|---|---|
 | M20 Pro | `config/m20_pro.yaml` | `/LIDAR/POINTS` · `sensor_msgs/msg/PointCloud2` | `/IMU` |
-| Mid360 | `config/mid360.yaml` | `/livox/lidar` · `livox_ros_driver2/msg/CustomMsg` | `/livox/imu` |
+| Lite3 EDU / Mid360 | `config/mid360.yaml` | `/livox/lidar` · `livox_ros_driver2/msg/CustomMsg` | `/livox/imu` |
 
 Use the same preset for mapping and localization. Set paths for your recording
 and a **new** map directory; `BAG` accepts a SQLite bag directory or `.db3` file:
@@ -79,7 +83,9 @@ export BAG="/absolute/path/to/recording"
 export MAP="$PWD/data/my_map"
 ```
 
-For M20 Pro, select `config/m20_pro.yaml`. Check the topic names and sensor
+For M20 Pro, select `config/m20_pro.yaml`. For live Lite3 EDU operation with the
+LiDAR's internal IMU, use the [AGX setup](#62-lite3-edu-with-agx-mid360), which
+creates the appropriate runtime configuration. Check topic names and sensor
 calibration when using another mounting.
 
 <details>
@@ -823,8 +829,9 @@ matches. An existing trajectory file at the selected path is replaced.
 <details>
 <summary>9.1 Seven-dataset reconstruction and localization results</summary>
 
-All seven recordings passed offline/online mapping and offline/online localization
-checks on Ubuntu 22.04 / Humble, with the viewer enabled and online playback at 1×.
+The seven-recording reference validation passed offline/online mapping and
+offline/online localization on Ubuntu 22.04 / Humble, with the viewer enabled
+and online playback at 1×.
 Each sensor family uses one preset without route-specific tuning.
 
 | Recording | Configuration | Offline mapping | Online mapping | Offline localization | Online localization |
@@ -852,8 +859,8 @@ See [validation details and recording paths](doc/validation.md) for the evidence
 The largest measured application memory footprint was **1.26 GiB**, or **1.41 GiB**
 including bag playback, on the x86 workstation with visualization enabled.
 These sampled sums of process RSS exclude the display server, OS, and other robot
-software; shared pages may be counted twice. RK3588 runtime and memory still
-require hardware testing.
+software; shared pages may be counted twice. These workstation figures and
+stationary robot checks do not establish RK3588 performance on moving routes.
 
 Point sampling remains every sixth M20 point or every fourth Mid360 point, with
 0.5 m voxels. Map localization is capped at 5 Hz while incoming scans and IMU
@@ -871,8 +878,11 @@ Use `scripts/build_robot.sh` for onboard builds and validate at normal sensor ra
 
 ## 10. Maintenance and license
 
-Contributor guidance lives in [AGENTS.md](AGENTS.md), with detailed
-[implementation](doc/implementation.md) and [validation](doc/validation.md) notes.
+[AGENTS.md](AGENTS.md) guides AI agents working on this repository. Ask your
+assistant to read it before making changes; it covers supported platforms,
+algorithm constraints, deployment, and how to verify results. Detailed
+[implementation](doc/implementation.md) and [validation](doc/validation.md) notes
+provide the supporting evidence.
 
 Based on [Lightning-LM](https://github.com/gaoxiang12/lightning-lm).
 See [LICENSE.txt](LICENSE.txt) for the BSD 3-Clause license. Bundled dependencies
