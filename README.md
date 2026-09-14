@@ -11,6 +11,8 @@ point clouds. Both sensor presets use the same four online and offline applicati
 Supports **Ubuntu 20.04 / ROS 2 Foxy** and **Ubuntu 22.04 / ROS 2 Humble**.
 Use an OpenGL desktop for visualization. For an M20 Pro without internet access,
 follow [onboard deployment](#5-deploy-from-a-laptop-to-the-robot).
+For a Jetson AGX using Livox LiDAR and its internal IMU, follow
+[AGX deployment](#9-jetson-agx-with-a-livox-sensor).
 Run these commands from the repository root in a fresh Bash terminal:
 
 ```bash
@@ -406,6 +408,8 @@ for forwarded displays. MobaXterm also provides OpenGL settings under
 
 Start the hardware driver from its own workspace. This repository includes Livox
 message definitions; install and launch the full Mid360 driver separately.
+For AGX deployment and internal-IMU calibration, see
+[section 9](#9-jetson-agx-with-a-livox-sensor).
 In the driver's sourced terminal, set the following before launching it, using
 this repository's location:
 
@@ -605,10 +609,186 @@ matches. An existing trajectory file at the selected path is replaced.
 
 </details>
 
-## 9. Results and onboard resources
+## 9. Jetson AGX with a Livox sensor
+
+Run mapping, localization, and RViz2 on the AGX. The example below reaches it
+through the robot's Wi-Fi connection and uses the Livox sensor's **internal IMU**.
+Ubuntu's desktop can display the RViz window through SSH; MobaXterm is optional
+on Windows.
+
+### 9.1 Laptop: transfer the sources and connect
+
+Create `/tmp/lightning-source.tar.gz` using the archive command in section 5.1,
+then transfer it through the robot:
+
+```bash
+export JUMP=ysc@192.168.2.1
+export AGX=ysc@192.168.1.45
+scp -o HostKeyAlias=lightning-agx -J "$JUMP" \
+  /tmp/lightning-source.tar.gz "$AGX:~/"
+ssh -Y -C -o HostKeyAlias=lightning-agx -J "$JUMP" "$AGX"
+```
+
+### 9.2 AGX: compile and install
+
+In the AGX terminal:
+
+```bash
+mkdir -p ~/lightning-lm
+tar -xzf ~/lightning-source.tar.gz --touch -C ~/lightning-lm
+cd ~/lightning-lm
+source /opt/ros/humble/setup.bash
+bash scripts/build_robot.sh
+source scripts/setup.bash
+ros2 pkg executables lightning
+ros2 interface show lightning/srv/SaveMap
+ros2 interface show livox_ros_driver2/msg/CustomMsg
+```
+
+### 9.3 Start the Livox driver
+
+Open another AGX terminal. Set `LIVOX_WS` to the full Livox driver's workspace.
+Check its network configuration uses the AGX's Ethernet address and the connected
+sensor's address, then launch the matching sensor variant:
+
+```bash
+export LIVOX_WS="/path/to/livox_driver_workspace"
+source /opt/ros/humble/setup.bash
+source "$LIVOX_WS/install/setup.bash"
+export ROS_DOMAIN_ID=42
+export ROS_LOCALHOST_ONLY=1
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export FASTRTPS_DEFAULT_PROFILES_FILE="$HOME/lightning-lm/config/fastdds.xml"
+ros2 launch livox_ros_driver2 msg_MID360s_launch.py
+```
+
+For a Mid360, use `msg_MID360_launch.py`. A Mid360s requires a driver and Livox SDK
+that support that variant. Keep the driver running throughout mapping and
+localization.
+
+### 9.4 Prepare the application terminals
+
+Run this setup in every AGX application, RViz, and map-save terminal:
+
+```bash
+cd ~/lightning-lm
+source scripts/setup.bash
+export ROS_DOMAIN_ID=42
+export ROS_LOCALHOST_ONLY=1
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/config/fastdds.xml"
+export CONFIG="$PWD/data/mid360_internal_imu.yaml"
+```
+
+Create the runtime configuration once. This selects the Livox internal IMU
+calibration and disables the built-in map viewer:
+
+```bash
+python3 - <<'PYCONFIG'
+from pathlib import Path
+import yaml
+config = yaml.safe_load(Path("config/mid360.yaml").read_text())
+config["system"]["with_ui"] = False
+config["fasterlio"]["extrinsic_T"] = [-0.011, -0.02329, 0.04412]
+config["fasterlio"]["extrinsic_R"] = [1, 0, 0, 0, 1, 0, 0, 0, 1]
+Path("data").mkdir(exist_ok=True)
+Path("data/mid360_internal_imu.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
+PYCONFIG
+```
+
+### 9.5 Start mapping and view the live scan
+
+Keep the sensor stationary during initialization, then start mapping:
+
+```bash
+ros2 run lightning run_slam_online --config "$CONFIG" --rviz
+```
+
+In another X11-forwarded AGX terminal, repeat section 9.4's terminal setup and run:
+
+```bash
+__GLX_VENDOR_LIBRARY_NAME=mesa LIBGL_ALWAYS_SOFTWARE=1 \
+  LP_NUM_THREADS=2 QT_X11_NO_MITSHM=1 \
+  rviz2 -d config/onboard.rviz \
+  --ros-args -r /tf:=/lightning/tf -r /tf_static:=/lightning/tf_static
+```
+
+RViz shows the current LiDAR scan, red location arrow, and retained yellow
+trajectory. The map stays onboard without being displayed.
+
+### 9.6 Save the map
+
+In another prepared AGX terminal, save to a new directory:
+
+```bash
+ros2 service call /lightning/save_map lightning/srv/SaveMap "{map_id: agx_map}"
+```
+
+Wait for `response: 0`, then stop mapping with **Ctrl+C** and close RViz.
+Keep the complete `data/agx_map/` directory for localization.
+
+### 9.7 Start localization and view the trajectory
+
+Repeat section 9.4's terminal setup and use the saved map:
+
+```bash
+export MAP="$PWD/data/agx_map"
+ros2 run lightning run_loc_online \
+  --config "$CONFIG" --map_path "$MAP" --rviz \
+  --trajectory "$PWD/localization_agx.tum" \
+  -- --ros-args -r /tf:=/lightning/tf -r /initialpose:=/lightning/initialpose
+```
+
+Start the same RViz command from section 9.5 in another prepared, X11-forwarded
+AGX terminal. Stop localization with **Ctrl+C** when finished, then close RViz.
+Stop the Livox driver with **Ctrl+C** when both workflows are finished.
 
 <details>
-<summary>9.1 Seven-dataset reconstruction and localization results</summary>
+<summary>9.8 Network, calibration, and display details</summary>
+
+The jump host forwards SSH to the AGX; it does not run Lightning-LM or RViz.
+Substitute the SSH accounts and addresses for your setup. `HostKeyAlias` keeps
+this AGX's identity separate from a device using the same private IP address on
+another network. Verify the host identity when first connecting or when its key
+changes. Keep SSH's assigned `DISPLAY` and X authorization.
+
+The AGX needs the ROS distribution and dependencies from section 1. Once these
+are installed, the source build requires no internet downloads. The robot build
+script selects up to four jobs according to available RAM. AGX compilation and
+runtime use its available CPUs; the RK3588 core numbers in sections 7–8 apply to
+M20 Pro hardware.
+
+ROS domain 42 and `ROS_LOCALHOST_ONLY=1` keep this pipeline on the AGX. Use the
+same settings in every participating terminal. The Livox driver still receives
+sensor packets over Ethernet. RViz subscribes locally, while SSH carries window
+drawing traffic over Wi-Fi. The software Mesa settings support the forwarded
+window on Jetson; window size and refresh rate affect bandwidth.
+
+The application uses `/livox/lidar` and `/livox/imu`. Both the
+[Mid360 manual](https://terra-1-g.djicdn.com/851d20f7b9f64838a34cd02351370894/Livox/Livox_Mid-360_User_Manual_EN.pdf)
+and the [Mid360s manual, page 22](https://terra-1-g.djicdn.com/65c028cd298f4669a7f0e40e50ba1131/Mid-360S/UM/20260601/Livox_Mid-360s_User_Manual_en.pdf#page=22)
+define aligned axes and place the internal IMU at `[0.011, 0.02329, -0.04412]`
+metres in LiDAR coordinates. Lightning-LM uses `p_imu = R * p_lidar + T`, so the
+translation in section 9.4 has the opposite sign. Keep the driver's point-cloud
+extrinsic transform at identity when using these values.
+
+A robot URDF's LiDAR-to-body mounting describes a separate transform. Apply it
+when converting the estimated sensor pose to the robot body frame. The runtime
+copy leaves the shared recording preset intact and changes only calibration and
+the built-in viewer setting. Mapping and localization must use the same copy.
+
+The scan and arrow update at up to 5 Hz, and the retained path refreshes at 1 Hz.
+A stationary sensor produces a short, clustered trajectory. Reopening RViz
+recovers the session history while the application is running. Localization
+updates the display only for accepted matches; inspect the application terminal
+if the view stops updating.
+
+</details>
+
+## 10. Results and onboard resources
+
+<details>
+<summary>10.1 Seven-dataset reconstruction and localization results</summary>
 
 All seven recordings passed offline/online mapping and offline/online localization
 checks on Ubuntu 22.04 / Humble, with the viewer enabled and online playback at 1×.
@@ -634,7 +814,7 @@ See [validation details and recording paths](doc/validation.md) for the evidence
 </details>
 
 <details>
-<summary>9.2 RK3588 and the 16 GB memory budget</summary>
+<summary>10.2 RK3588 and the 16 GB memory budget</summary>
 
 The largest measured application memory footprint was **1.26 GiB**, or **1.41 GiB**
 including bag playback, on the x86 workstation with visualization enabled.
@@ -656,7 +836,7 @@ Use `scripts/build_robot.sh` for onboard builds and validate at normal sensor ra
 
 </details>
 
-## 10. Maintenance and license
+## 11. Maintenance and license
 
 Contributor guidance lives in [AGENTS.md](AGENTS.md), with detailed
 [implementation](doc/implementation.md) and [validation](doc/validation.md) notes.

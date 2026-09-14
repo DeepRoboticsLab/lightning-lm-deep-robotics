@@ -357,3 +357,44 @@ experiments, and the distinction between historical proposals and completed work
   cap or a topic frequency does not establish smooth rendering over SSH.
   A blank nested X desktop is a test harness, never a successful RViz capture;
   close it between tests and clean up only processes started by the test.
+
+### Jetson AGX with Livox internal IMU
+
+- Reach the AGX through the robot with SSH ProxyJump and forward X11 directly
+  from the AGX. The jump host needs no X server. Private IPs can overlap another
+  laptop interface or a previous device; verify the target key using the trusted
+  jump host's existing record, and use a distinct HostKeyAlias. Preserve old
+  known-host records instead of blindly removing mismatches.
+- Audit the AGX's actual ROS distribution, dependencies, RAM and driver workspace.
+  Use the existing build scripts and the AGX's available CPUs. RK3588 CPU numbers
+  and firmware-affinity assumptions do not apply to Jetson. Keep builds and test
+  runs separate when measuring runtime throughput.
+- Keep the full Livox hardware driver in its own sourced workspace. Match the
+  launch/configuration to Mid360 versus Mid360s and check the installed config's
+  host Ethernet address and sensor IP. A running ROS node alone does not prove
+  packets are being received. Preserve pre-existing driver/configuration edits.
+- An independent all-on-AGX pipeline can use ROS_DOMAIN_ID=42 and
+  ROS_LOCALHOST_ONLY=1 in driver, application, service and RViz terminals. This
+  isolates DDS from robot firmware while the hardware driver receives Ethernet
+  packets. Start one owned driver instance and stop only owned test processes.
+- For the internal Livox IMU, subscribe to /livox/imu with /livox/lidar. The
+  Mid360 and Mid360s manuals define parallel axes and put the IMU origin at
+  [0.011, 0.02329, -0.04412] metres in LiDAR coordinates. For this project's
+  p_imu = R * p_lidar + T convention, use R=I and
+  T=[-0.011, -0.02329, 0.04412]. Verify the driver's point transform is identity.
+  Apply this calibration in an external runtime copy of config/mid360.yaml;
+  preserve the historical recording preset and its evidence. A robot URDF's
+  LiDAR-to-body transform is separate and must not replace this internal transform.
+- Check sensor header cadence, per-point timing, acquisition spans and IMU
+  coverage before diagnosing a clock-offset problem. Full Python CustomMsg
+  decoding can saturate a probe on ARM and create measurement backlog. Use a
+  lightweight raw-CDR or C++ observer; distinguish acquisition timestamps from
+  callback arrival and processing time. Do not compensate probe backlog with
+  estimator timestamp shifts or an adaptive offset filter.
+- The existing Livox driver may substitute host receipt timestamps for unsynced
+  packets. Record the actual driver version and timestamp path; coherent output
+  under that mode is not hardware/PTP synchronization qualification.
+- Forwarded Jetson RViz can use __GLX_VENDOR_LIBRARY_NAME=mesa together with
+  LIBGL_ALWAYS_SOFTWARE=1, LP_NUM_THREADS=2 and QT_X11_NO_MITSHM=1. Inspect real
+  scan/arrow/path pixels and frame timing after initialization. Preserve the
+  existing display rates, QoS, full-session trajectory and absence of map topics.
