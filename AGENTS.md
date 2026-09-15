@@ -224,6 +224,46 @@ edit firmware DDS files to hide the parsing error. Check noisy/failing setup and
 actual delivery on Foxy/M20 and Humble/AGX. Configuration affects launcher children,
 not the parent shell; direct `ros2` commands still need that shell's ROS/DDS setup.
 
+`onboard.py status` is an operator-facing delivery check: report each sensor's
+topic and received count, distinguish no publisher from a discovered publisher
+with no delivery, and print SUCCESS or NOT READY with a relevant next step.
+Mention an existing estimator instead of implying a duplicate can be started.
+Preserve `status --json` for automation, the internal probe's JSON-only stdout,
+and exit codes 0 (both streams arrive) / 1 (missing input or check failure).
+Readiness is a short transport check, not calibration, clock or sustained-rate
+qualification. Test missing LiDAR, missing IMU, both missing, discovered but silent
+publishers, live success, and malformed/missing setup without stopping firmware.
+
+### SSH disconnects and tmux
+
+Keep the headless driver and algorithm inside tmux on AOS/AGX when sessions must
+survive Wi-Fi loss. M20 sessions use root; AGX sessions use the driver/application
+account. Sessions are scoped to a host and user. Reattach existing sessions after
+reconnection; do not start duplicate estimators or assume tmux survives a reboot.
+An already-running driver outside tmux is not adopted by `onboard.py lidar`.
+
+Run RViz outside tmux in a fresh authenticated `ssh -Y -C` connection. An existing
+X11 client cannot migrate when the original tunnel ends. Reopen the viewer with
+the new connection's DISPLAY/XAUTHORITY, preserving authorization through M20
+root elevation. The retained path recovers while the same estimator remains
+alive. Do not restart estimation, persist display credentials, or add automatic
+shell hooks to reopen viewers. Saved maps reopen with the existing `rviz --map`
+command and require no estimator.
+
+Document create/list/attach/detach/stop operations. Save mapping successfully
+before Ctrl+C; wait for the shell prompt before exiting or removing a session.
+Stop only the named test sessions and their owned applications, never a shared
+tmux server or firmware services. Validate SSH-client loss and reattachment with
+unchanged process identity, continuing sensor/pose delivery, retained path start
+timestamps, actual reopened RViz pixels, and clean shutdown. Keep driver ownership
+and stationary-test limits explicit.
+
+When connecting robot Wi-Fi alongside laptop Ethernet, inspect routes, DNS and
+link/driver logs before changing settings. Robot-only Wi-Fi profiles should not
+replace the internet default route or DNS. Preserve unrelated profiles and VPN
+settings; distinguish a reported carrier drop from proven physical unplugging.
+Record local network changes and rollback information outside the public tree.
+
 ### M20 Pro / AOS
 
 - NOS is `10.21.31.106`. Start `multicast-relay.service` for point-cloud access;
@@ -322,6 +362,9 @@ the SSH stream before making bandwidth claims.
   Keep Qt5/RViz APIs compatible with Foxy/Humble; do not speculatively replace
   graphics libraries. Test close, canceled close, Ctrl+C and SSH hangup, including
   large maps and cleanup of both owned processes; report abnormal exits.
+  A disconnected SSH PTY can raise EIO while reporting a viewer exit. Stop the
+  saved-map publisher in its own `finally` so a cleanup/logging failure cannot
+  strand it. Validate actual connection loss as well as sending SIGHUP alone.
 - The launcher records a stable IMU mean while stationary before mapping.
   Estimation starts with identity rotation and gravity in initial IMU axes;
   map Z is not automatically vertical. Save the upward vector in `map_view.json`,

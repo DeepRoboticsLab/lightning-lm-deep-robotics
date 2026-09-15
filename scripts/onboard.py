@@ -150,8 +150,12 @@ def load_profile(path):
     if not path.is_file():
         raise ValueError("Run 'python3 scripts/onboard.py configure agx' "
                          "or 'configure m20' once first.")
-    profile = json.loads(path.read_text())
-    if profile.get("version") != 1 or profile.get("platform") not in ("agx", "m20"):
+    try:
+        profile = json.loads(path.read_text())
+    except json.JSONDecodeError as error:
+        raise ValueError(f"Invalid JSON in onboard settings {path}: {error.msg}.") from error
+    if (not isinstance(profile, dict) or profile.get("version") != 1
+            or profile.get("platform") not in ("agx", "m20")):
         raise ValueError("Unsupported onboard settings: " + str(path))
     if not isinstance(profile.get("domain"), int) or not 0 <= profile["domain"] <= 232:
         raise ValueError("Invalid ROS domain in onboard settings.")
@@ -306,6 +310,38 @@ def check_sensors(args, profile):
         stop(process)
 
 
+def report_status(observed, profile):
+    for index, (key, label) in enumerate((("lidar", "LiDAR"), ("imu", "IMU"))):
+        topic = observed["topics"][index]
+        count = observed["counts"][key]
+        if count:
+            print(f"OK: {label} ({topic}): received {count} messages.")
+        else:
+            reason = ("publisher found, but no messages received" if observed["publishers"][index]
+                      else "no publisher found and no messages received")
+            print(f"ERROR: {label} ({topic}): {reason}.")
+    if not all(observed["counts"].values()):
+        print("NOT READY: Both LiDAR and IMU streams are required.")
+        if profile["platform"] == "m20":
+            print("Check multicast-relay.service on NOS and the M20 firmware sensor services.")
+        elif not any(observed["publishers"]):
+            print("Start the Livox driver: python3 scripts/onboard.py lidar")
+        else:
+            print("Check the running Livox driver and its Ethernet connection.")
+        if any(not observed["counts"][key] and observed["publishers"][index]
+               for index, key in enumerate(("lidar", "imu"))):
+            print("Check ROS domain and DDS settings: discovery alone does not confirm delivery.")
+        return
+    running = [label for node, label in (("lightning_slam", "mapping"),
+                                        ("lightning_localization", "localization"))
+               if node in observed["nodes"]]
+    if running:
+        print("SUCCESS: Both sensor streams are arriving.")
+        print("RUNNING: " + ", ".join(running) + ". Stop it before starting another algorithm.")
+    else:
+        print("SUCCESS: Sensors are ready. You can start mapping or localization.")
+
+
 def save_map(settings, map_id):
     import rclpy
     from lightning.srv import SaveMap
@@ -396,9 +432,13 @@ def view_map(args, profile):
         except KeyboardInterrupt:
             return 130
         finally:
-            if viewer:
-                stop(viewer)
-            stop(publisher)
+            # A dead SSH terminal can make RViz exit reporting raise EIO.
+            # Always release the publisher, even if viewer cleanup fails.
+            try:
+                if viewer:
+                    stop(viewer)
+            finally:
+                stop(publisher)
 
 
 def main():
@@ -432,7 +472,8 @@ def main():
     alignment = rviz.add_mutually_exclusive_group()
     alignment.add_argument("--original-frame", action="store_true", help="ignore saved-map leveling metadata")
     alignment.add_argument("--up", type=float, nargs=3, help="measured upward direction in an older map's frame")
-    commands.add_parser("status", help="check live LiDAR and IMU delivery")
+    status = commands.add_parser("status", help="report sensor readiness and missing inputs")
+    status.add_argument("--json", action="store_true", help="print the raw sensor report for scripts")
     args = parser.parse_args()
     args.settings = args.settings.expanduser().resolve()
     if args.command == "configure":
@@ -470,10 +511,16 @@ def main():
                     return 0
                 raise ValueError("The driver command is already running but both streams are not arriving. "
                                  "Check its terminal and Ethernet configuration.")
+        if args.command == "status" and not args.json:
+            robot = "M20 Pro" if profile["platform"] == "m20" else "Lite3 EDU / AGX"
+            print(f"Checking {robot} sensor inputs (ROS domain {profile['domain']})...", flush=True)
         observed = check_sensors(args, profile)
         ready = all(observed["counts"].values())
         if args.command == "status":
-            print(json.dumps(observed, indent=2))
+            if args.json:
+                print(json.dumps(observed, indent=2))
+            else:
+                report_status(observed, profile)
             return 0 if ready else 1
         if args.command == "lidar":
             if ready:
@@ -522,7 +569,7 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except (ValueError, OSError, KeyError, yaml.YAMLError, subprocess.TimeoutExpired) as error:
-        print("onboard:", error, file=sys.stderr)
+        print("onboard: ERROR:", error, file=sys.stderr)
         sys.exit(1)
     except KeyboardInterrupt:
         sys.exit(130)

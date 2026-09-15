@@ -401,6 +401,10 @@ Check live LiDAR and IMU delivery:
 python3 scripts/onboard.py status
 ```
 
+`status` prints **SUCCESS** when both sensor streams arrive. Otherwise, it names
+each missing input, distinguishes a missing publisher from a publisher delivering
+no data, and suggests what to check. Fix **NOT READY** errors before proceeding.
+
 Keep the firmware sensor publishers running. Continue with
 [onboard mapping](#7-onboard-mapping) or
 [onboard localization](#8-onboard-localization).
@@ -431,6 +435,11 @@ ros2 topic hz /LIDAR/POINTS
 
 Seeing a topic in `ros2 topic list` confirms discovery. Use `status` or `topic hz`
 to check that its messages actually arrive.
+
+For scripts, use `python3 scripts/onboard.py status --json` to get the raw report.
+Both output formats exit with status 0 when both streams arrive and 1 when an
+input is missing. This short delivery check does not validate calibration,
+timestamp synchronization, or sustained performance.
 
 The root-shell command preserves SSH's display and X authorization. Keep the
 SSH-assigned `DISPLAY`; do not replace it with the laptop's IP address. RViz2 and
@@ -478,7 +487,8 @@ python3 scripts/onboard.py configure agx
 ```
 
 Before live mapping or localization, start the LiDAR driver in a separate AGX
-terminal and leave it running:
+terminal and leave it running. Use [tmux](#63-keep-running-through-ssh-disconnects-with-tmux)
+for this terminal when connecting over Wi-Fi:
 
 ```bash
 cd ~/lightning-lm
@@ -498,6 +508,10 @@ CPU settings, and visualization environment automatically. No repeated exports o
 ```bash
 python3 scripts/onboard.py status
 ```
+
+Continue when it prints **SUCCESS**. If it prints **NOT READY**, follow the
+reported LiDAR/IMU error and driver hint. If mapping or localization is already
+running, `status` reports that too; stop it before starting another algorithm.
 
 Continue with [onboard mapping](#7-onboard-mapping) and
 [onboard localization](#8-onboard-localization).
@@ -581,8 +595,148 @@ missing, inspect its network configuration instead of starting another driver.
 
 </details>
 
+### 6.3 Keep running through SSH disconnects with tmux
+
+Run the sensor driver and algorithm in **tmux on the robot computer**. They keep
+running when Wi-Fi drops or you close SSH. Run RViz in a separate X11-forwarded
+SSH terminal, so you can reopen its window after reconnecting.
+
+Complete the one-time configuration above first. Start from the deployment
+directory in each robot terminal. On **M20, enter the root shell before using
+tmux**; on **AGX, use the `ysc` account**. Sessions belong to the account and
+computer that created them. Check availability with `tmux -V`.
+
+#### 6.3.1 Keep the AGX LiDAR driver running
+
+Skip this step on M20, whose sensors use firmware services. On AGX, create a
+driver session:
+
+```bash
+cd ~/lightning-lm
+tmux new-session -s lightning-lidar
+```
+
+Inside that session, start the driver:
+
+```bash
+python3 scripts/onboard.py lidar
+```
+
+Press **Ctrl+B**, release both keys, then press **D** to detach. The driver
+continues running. If it was already running in an ordinary SSH terminal, keep
+that terminal open until you can stop its driver with Ctrl+C and start it here.
+The launcher reuses an existing driver; it cannot move that process into tmux.
+
+#### 6.3.2 Start mapping or localization
+
+In the prepared robot shell, create the algorithm session:
+
+```bash
+tmux new-session -s lightning
+```
+
+Inside it, start mapping:
+
+```bash
+python3 scripts/onboard.py slam
+```
+
+Or, after stopping mapping, start localization against a saved map:
+
+```bash
+python3 scripts/onboard.py localize data/onboard_map
+```
+
+Use **Ctrl+B, then D** to detach whenever needed. Closing SSH afterward leaves
+the algorithm running. Run only one mapping or localization process at a time.
+
+#### 6.3.3 Find and reconnect to sessions
+
+Reconnect to AOS or AGX using section 6.1 or 6.2, enter the deployment directory,
+and enter the root shell again on M20. Find existing sessions and reattach:
+
+```bash
+tmux list-sessions
+tmux attach-session -d -t lightning
+```
+
+`-d` detaches an old client that still appears connected after a Wi-Fi drop;
+the running algorithm is preserved. To return to the AGX driver instead, use
+`tmux attach-session -d -t lightning-lidar`. Inside tmux, **Ctrl+B, then S** lists
+sessions for selection. If the session already exists, attach rather than
+starting another one. A robot reboot ends tmux sessions.
+
+#### 6.3.4 Reopen RViz after reconnecting
+
+Open a **new laptop terminal** and reconnect with your robot's `ssh -Y -C`
+command from section 6.1 or 6.2. On the robot, enter the deployment directory
+and the root shell on M20, preserving the new connection's display authorization.
+Stay **outside tmux** and run:
+
+```bash
+echo "$DISPLAY"
+python3 scripts/onboard.py rviz
+```
+
+The display must be nonempty. RViz opens a new window with the current scan,
+location and full retained trajectory from the still-running algorithm. You do
+not need to restart mapping or localization. To reopen a saved-map window, use
+`python3 scripts/onboard.py rviz --map data/onboard_map` instead.
+
+An existing X11 window cannot migrate to the new SSH connection. Reopening RViz
+is a manual step; tmux preserves the algorithm, not the old display tunnel.
+Trajectory history resets if the algorithm itself restarts.
+
+#### 6.3.5 Stop sessions cleanly
+
+For mapping, first save from another prepared robot terminal, using a new map ID:
+
+```bash
+python3 scripts/onboard.py save onboard_map
+```
+
+Wait for `response: 0`, then reattach to the algorithm session:
+
+```bash
+tmux attach-session -d -t lightning
+```
+
+Press **Ctrl+C** to stop mapping or localization. Wait for the shell prompt,
+then type `exit` to close the session. On AGX, keep the driver for another run,
+or attach to `lightning-lidar`, press Ctrl+C, wait for the prompt, and type `exit`.
+Close RViz separately. Check `tmux list-sessions` afterward; “no server running”
+is normal when the last session has ended.
+
+To remove a session whose application you have already stopped, run
+`tmux kill-session -t lightning` (or `-t lightning-lidar` for the driver).
+Do not use session removal in place of saving and stopping the application.
+
 <details>
-<summary>6.3 Best-effort DDS and the larger shared-memory buffer</summary>
+<summary>6.3.6 Session behavior and troubleshooting</summary>
+
+Tmux holds the application's terminal open on the robot while SSH clients attach
+and detach. It does not restart crashed applications or survive a robot reboot.
+Use the same account for creation, listing and attachment: an ordinary M20
+`user` terminal will not list root's sessions. See the
+[tmux guide](https://github.com/tmux/tmux/wiki/Getting-Started) for window and pane
+shortcuts.
+
+An old tmux pane can retain an expired `DISPLAY` and X11 cookie. Changing that
+variable cannot reconnect an already-running GUI. Keep viewers in fresh SSH
+terminals and let `onboard.py rviz` load the saved ROS settings there; do not save
+display variables in `onboard.json` or shell startup files. SSH's
+[X11 forwarding documentation](https://man.openbsd.org/ssh.1#X11_FORWARDING)
+explains how the display and authorization belong to the connection.
+
+If `tmux -V` reports “command not found”, install the Ubuntu `tmux` package on
+the robot before using this workflow. For an offline robot, transfer packages
+matching its Ubuntu version and ARM architecture, including any missing package
+dependencies. Tmux is a terminal tool and does not require rebuilding Lightning-LM.
+
+</details>
+
+<details>
+<summary>6.4 Best-effort DDS and the larger shared-memory buffer</summary>
 
 Best effort avoids waiting for retransmission of missing samples. Adequate
 processing capacity and buffering still matter; delivery is not guaranteed.
@@ -621,7 +775,8 @@ leave the sensor driver running; on AGX, start it with `onboard.py lidar` first.
 
 ### 7.1 Start mapping
 
-In the prepared application terminal:
+In the prepared application terminal, preferably inside the
+[tmux algorithm session](#632-start-mapping-or-localization):
 
 ```bash
 python3 scripts/onboard.py slam
@@ -764,7 +919,9 @@ on AGX, use `onboard.py lidar` if it has stopped.
 
 ### 8.1 Load the map and start localization
 
-Use the map saved in section 7, or substitute an existing complete map directory:
+Use the map saved in section 7, or substitute an existing complete map directory.
+Run inside the [tmux algorithm session](#632-start-mapping-or-localization) to
+keep localization running through SSH disconnects:
 
 ```bash
 python3 scripts/onboard.py localize data/onboard_map
