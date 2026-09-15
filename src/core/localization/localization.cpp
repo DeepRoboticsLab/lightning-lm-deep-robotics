@@ -361,7 +361,8 @@ void Localization::Finish() {
 
 void Localization::SetExternalPose(const Eigen::Quaterniond& q, const Eigen::Vector3d& t) {
     UL lock(global_mutex_);
-    if (!q.coeffs().allFinite() || !t.allFinite() || q.norm() < 1e-6) {
+    const double norm = q.norm();
+    if (!q.coeffs().allFinite() || !t.allFinite() || !std::isfinite(norm) || norm < 1e-6) {
         LOG(ERROR) << "Initial pose must have finite coordinates and a nonzero quaternion";
         return;
     }
