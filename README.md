@@ -846,10 +846,11 @@ preset as online dataset playback. The robot's sensor driver supplies LiDAR and
 IMU messages directly; no bag player is needed.
 
 Keep the complete map directory, including `index.txt`, all numbered `.pcd`
-tiles, and `global.pcd`. The same map format is used by recorded-data and onboard
-localization. The runtime copy disables Pangolin; `--rviz` enables the lightweight
-ROS display outputs. Neither the RViz preset nor these outputs includes a map
-cloud.
+tiles, `global.pcd`, `places.bin` for automatic initialization, and `map_view.json`
+for saved-map display leveling when present. The same map format is used by
+recorded-data and onboard localization. The runtime copy disables Pangolin;
+`--rviz` enables the lightweight ROS display outputs. Neither the RViz preset
+nor these outputs includes a map cloud.
 
 On the standard RK3588 firmware, the commands place estimation on A76 core 7 and
 RViz2 on A76 core 6. This avoids the A55 affinity inherited by some SSH shells and

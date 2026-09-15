@@ -256,5 +256,9 @@ is never silently overwritten.
 | 3 | No map data, nonempty destination, or export failure |
 
 The full directory comprises `global.pcd`, `index.txt` (tile index and starting
-pose), and numbered PCD tiles. Copy/rename the complete directory for deployment.
-Localization cannot load a standalone global PCD as a complete tiled map.
+pose), numbered PCD tiles, and `places.bin` for global initialization. The onboard
+launcher also saves `map_view.json` when it captures a stable startup gravity
+reference. Copy/rename the complete directory for deployment, retaining both
+sidecars when present. Older maps can omit them: ordinary/manual localization
+uses the tiles, and saved-map viewing retains the original frame. Localization
+cannot load a standalone global PCD as a complete tiled map.

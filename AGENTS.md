@@ -411,6 +411,11 @@ Choose checks according to the change:
   data for trajectory visibility. Stationary success does not qualify moving
   routes, loop closure, large maps or runtime resource limits. Preserve firmware
   services and unrelated user sessions; stop only processes started by the test.
+  Exercise `onboard.py localize ... --global-init` against the newly saved map,
+  including its `places.bin`; default initialization does not test this path.
+  A stationary check at the mapping origin does not validate recognition at
+  distant locations. Keep the complete map directory and any display sidecar
+  when transferring it.
 
 Use unique outputs. Wait for successful `/lightning/save_map` response before
 stopping online mapping. Check `index.txt` and every tile, readable finite PCD
