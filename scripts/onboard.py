@@ -464,6 +464,8 @@ def main():
     loc = commands.add_parser("localize", help="localize against a saved tiled map")
     loc.add_argument("map", type=Path)
     loc.add_argument("--trajectory", type=Path, default=ROOT / "data/localization_onboard.tum")
+    loc.add_argument("--global-init", action="store_true",
+                     help="find the initial location using a map saved with a place index")
     save = commands.add_parser("save", help="save the running mapping session")
     save.add_argument("map_id")
     rviz = commands.add_parser("rviz", help="view the live scan/path, or a saved map, over SSH X11")
@@ -542,6 +544,8 @@ def main():
         command = ["ros2", "run", "lightning", "run_slam_online" if args.command == "slam" else "run_loc_online",
                    "--config", profile["config"], "--rviz"]
         if args.command == "localize":
+            if args.global_init:
+                command += ["--global_init"]
             command += ["--map_path", str(args.map.expanduser().resolve()), "--trajectory",
                         str(args.trajectory.expanduser().resolve()), "--", "--ros-args",
                         "-r", "/tf:=/lightning/tf", "-r", "/initialpose:=/lightning/initialpose"]

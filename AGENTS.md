@@ -192,6 +192,23 @@ exclude build products, `__pycache__` and `.pyc`. Never transfer x86 binaries to
   A robot URDF's LiDAR-to-body transform is a separate calibration.
 - Reject non-finite, unconverged or low-confidence localization matches. Update
   map targets after tile loading, export only accepted poses, and preserve maps.
+- Global initialization is opt-in (`--global_init`, onboard `--global-init`).
+  Preserve legacy/manual initialization for maps without `places.bin`. The index
+  uses actual mapping keyframes and the poses used for map assembly; never seed
+  retrieval with the query's reference trajectory. Validate its version, size,
+  finite values, endian marker and cloud fingerprint before use.
+  Keep missing-sector penalties, competing-pose rejection and three-observation
+  confirmation. A high NDT score or successful initialization is not evidence of
+  the correct global location, especially in repeated or drifted map regions.
+  Online recognition owns one scan and one worker with a separate matcher;
+  propagate results with scan-end LiDAR odometry, revalidate the current scan,
+  honor manual overrides and join the worker on shutdown. Measure its additional
+  memory/CPU demand; tracking resource measurements do not include it.
+  Test independent cold starts, manual-seed controls, wrong maps, ambiguous maps,
+  index corruption, online input counts and accepted pose/scan timing. Distinguish
+  geometric reference consistency from ground-truth accuracy. The IMU initializer
+  assumes a stationary start: moving bag cuts can corrupt the initial gyro bias.
+  Do not bypass confirmation or change calibration to make those tests pass.
 - Preserve loop rejection and graph bookkeeping. Inactive edges must stop
   contributing. Check Miao's fixed-vertex/incremental-solver behavior before
   assuming an operation is safe.

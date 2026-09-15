@@ -68,7 +68,7 @@ bool LidarLoc::Init(const std::string& config_path) {
     options_.filter_intensity_max_ = yaml.GetValue<double>("lidar_loc", "filter_intensity_max");
     options_.lidar_loc_odom_th_ = yaml.GetValue<double>("lidar_loc", "lidar_loc_odom_th");
 
-    options_.init_with_fp_ = yaml.GetValue<bool>("lidar_loc", "init_with_fp");
+    options_.init_with_fp_ = options_.allow_default_initialization_ && yaml.GetValue<bool>("lidar_loc", "init_with_fp");
     options_.enable_parking_static_ = yaml.GetValue<bool>("lidar_loc", "enable_parking_static");
     options_.enable_icp_adjust_ = yaml.GetValue<bool>("lidar_loc", "enable_icp_adjust");
     options_.with_height_ = yaml.GetValue<bool>("loop_closing", "with_height");
@@ -287,6 +287,14 @@ bool LidarLoc::YawSearch(SE3& pose, double& confidence, CloudPtr input, CloudPtr
     }
 
     return yaw_search_success;
+}
+
+bool LidarLoc::RefineInitialCandidate(const CloudPtr& input, SE3& pose, double& confidence) {
+    assert(!loc_inited_);
+    map_->LoadOnPose(pose);
+    RefreshMap(true);
+    CloudPtr output(new PointCloudType);
+    return Localize(pose, confidence, input, output);
 }
 
 bool LidarLoc::InitWithFP(CloudPtr input, const SE3& fp_pose) {

@@ -1,8 +1,10 @@
 #include <pcl/common/transforms.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <future>
 
 #include "core/localization/lidar_loc/lidar_loc.h"
 #include "core/localization/localization.h"
+#include "core/localization/global_localization.h"
 #include "core/lio/laser_mapping.h"
 #include "core/localization/pose_graph/pgo.h"
 #include "io/yaml_io.h"
@@ -10,8 +12,18 @@
 
 namespace lightning::loc {
 
+struct Localization::GlobalState {
+    std::unique_ptr<GlobalLocalization> search;
+    std::future<GlobalLocalization::Result> pending;
+    SE3 query_lio, map_from_lio;
+    double last_query_stamp = -1;
+    int confirmations = 0;
+    bool manual = false, initialized = false;
+};
+
 // ！ 构造函数
 Localization::Localization(Options options) { options_ = options; }
+Localization::~Localization() { Finish(); }
 
 // ！初始化函数
 bool Localization::Init(const std::string& yaml_path, const std::string& global_map_path) {
@@ -40,6 +52,7 @@ bool Localization::Init(const std::string& yaml_path, const std::string& global_
     lidar_loc_options.force_2d_ = yaml.GetValue<bool>("lidar_loc", "force_2d");
     lidar_loc_options.map_option_.enable_dynamic_polygon_ = false;
     lidar_loc_options.map_option_.map_path_ = global_map_path;
+    lidar_loc_options.allow_default_initialization_ = !options_.global_init_;
     lidar_loc_ = std::make_shared<LidarLoc>(lidar_loc_options);
 
     if (options_.with_ui_) {
@@ -53,6 +66,11 @@ bool Localization::Init(const std::string& yaml_path, const std::string& global_
     }
 
     if (!lidar_loc_->Init(yaml_path)) return false;
+    if (options_.global_init_) {
+        global_.reset(new GlobalState);
+        global_->search.reset(new GlobalLocalization);
+        if (!global_->search->Init(yaml_path, global_map_path)) return false;
+    }
     if (!options_.trajectory_path_.empty()) {
         trajectory_.open(options_.trajectory_path_);
         if (!trajectory_) { LOG(ERROR) << "Cannot open trajectory file"; return false; }
@@ -159,9 +177,18 @@ void Localization::ProcessBufferedLidar(bool quiet_sync) {
 
 void Localization::LidarLocProcCloud(CloudPtr scan_undist) {
     last_match_time_ = lio_->GetState().timestamp_;
+    if (!TryGlobalInitialization(scan_undist)) {
+        ++match_count_;
+        LOG(INFO) << "Global initialization waiting for an unambiguous, repeatable match";
+        return;
+    }
     lidar_loc_->ProcessCloud(scan_undist, lio_->GetState().timestamp_);
 
     auto res = lidar_loc_->GetLocalizationResult();
+    if (global_ && !global_->manual && !global_->initialized) {
+        global_->initialized = res.lidar_loc_valid_;
+        if (!global_->initialized) global_->confirmations = 0;
+    }
     LOG(INFO) << "Localization match: valid=" << res.lidar_loc_valid_ << ", confidence=" << res.confidence_;
     ++match_count_;
     if (res.lidar_loc_valid_) {
@@ -188,6 +215,61 @@ void Localization::LidarLocProcCloud(CloudPtr scan_undist) {
         LOG(INFO) << "loc_state: " << loc_state->data;
         loc_state_callback_(*loc_state);
     }
+}
+
+bool Localization::TryGlobalInitialization(const CloudPtr& scan) {
+    if (!global_) return true;
+    if (global_->manual || global_->initialized) {
+        // Recognition is only needed at startup. Release its extra map/index
+        // after success or a manual override, once the owned worker has finished.
+        if (global_->search && (!global_->pending.valid() ||
+            global_->pending.wait_for(std::chrono::seconds(0)) == std::future_status::ready)) {
+            global_->pending = std::future<GlobalLocalization::Result>();
+            global_->search.reset();
+        }
+        return true;
+    }
+    auto& state = *global_;
+    const auto lo = lio_->GetState();
+    // Both the query pose and propagation use LiDAR coordinates at scan end.
+    const SE3 local_lidar = lo.GetPose() * SE3(lo.offset_R_lidar_, lo.offset_t_lidar_);
+    if (!state.pending.valid() &&
+        (state.last_query_stamp < 0 || lo.timestamp_ - state.last_query_stamp >= .5)) {
+        state.last_query_stamp = lo.timestamp_;
+        state.query_lio = local_lidar;
+        // A single owned scan and worker bound memory. Online sensor processing
+        // continues while place retrieval/NDT run; offline replay stays deterministic.
+        CloudPtr owned(new PointCloudType(*scan));
+        state.pending = std::async(options_.online_mode_ ? std::launch::async : std::launch::deferred,
+                                   [&state, owned]() { return state.search->Search(owned); });
+    }
+    if (state.pending.valid() && (!options_.online_mode_ ||
+        state.pending.wait_for(std::chrono::seconds(0)) == std::future_status::ready)) {
+        const auto candidate = state.pending.get();
+        if (!candidate.valid) {
+            state.confirmations = 0;
+        } else {
+            const SE3 predicted = state.map_from_lio * state.query_lio;
+            const SE3 change = predicted.inverse() * candidate.pose;
+            if (state.confirmations && (change.translation().norm() >= 1.0 ||
+                change.so3().log().norm() >= 10 * M_PI / 180)) {
+                LOG(INFO) << "Global candidates disagree with odometry: translation="
+                          << change.translation().norm() << " m, rotation="
+                          << change.so3().log().norm() * 180 / M_PI
+                          << " deg. Initialize the IMU while stationary.";
+            }
+            if (state.confirmations && change.translation().norm() < 1.0 &&
+                change.so3().log().norm() < 10 * M_PI / 180) ++state.confirmations;
+            else state.confirmations = 1;
+            state.map_from_lio = candidate.pose * state.query_lio.inverse();
+            LOG(INFO) << "Global initialization confirmation " << state.confirmations << "/3";
+        }
+    }
+    if (state.confirmations < 3) return false;
+    // Revalidate on the latest scan. Never publish the older worker result as
+    // though it belonged to a newer scan, and never use the map-start fallback.
+    lidar_loc_->SetInitialPose(state.map_from_lio * local_lidar);
+    return true;
 }
 
 void Localization::ProcessIMUMsg(IMUPtr imu) {
@@ -269,6 +351,7 @@ void Localization::ProcessIMUMsg(IMUPtr imu) {
 void Localization::Finish() {
     if (finished_) return;
     finished_ = true;
+    if (global_ && global_->pending.valid()) global_->pending.wait();
     if (lidar_loc_) lidar_loc_->Finish();
     if (ui_) ui_->Quit();
     trajectory_.close();
@@ -278,9 +361,14 @@ void Localization::Finish() {
 
 void Localization::SetExternalPose(const Eigen::Quaterniond& q, const Eigen::Vector3d& t) {
     UL lock(global_mutex_);
+    if (!q.coeffs().allFinite() || !t.allFinite() || q.norm() < 1e-6) {
+        LOG(ERROR) << "Initial pose must have finite coordinates and a nonzero quaternion";
+        return;
+    }
     /// 设置外部重定位的pose
     if (lidar_loc_) {
-        lidar_loc_->SetInitialPose(SE3(q, t));
+        if (global_) global_->manual = true;
+        lidar_loc_->SetInitialPose(SE3(q.normalized(), t));
         last_match_time_ = -1;
     }
 }

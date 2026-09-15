@@ -122,6 +122,52 @@ shutdown. Its rows are `timestamp x y z qx qy qz qw` for valid map matches.
 Online pose output uses `/lightning/pose`, with `map` → `base_link` TF.
 `/initialpose` accepts a map-frame pose guess; the estimator stays 3D afterward.
 
+### 4.1 Optional global initialization
+
+`--global_init` selects place recognition before ordinary localization. Mapping
+writes `places.bin` from its retained keyframe scans and the same poses used to
+assemble `global.pcd`. The 20-ring, 60-sector descriptors store maximum local
+height within 80 m, after 0.5 m voxelization. Circular sector shifts propose
+heading; saved keyframe poses propose position, roll and pitch. NDT then refines
+all six pose components. This is not an exhaustive search of arbitrary sensor
+roll and pitch.
+
+Descriptor similarity normalizes each populated sector and divides by the union
+of populated sectors. Dividing only by their intersection can give a strong
+score to a small accidental overlap. Ten spatially distinct proposals are checked
+with the existing full-3D NDT implementation. A candidate needs descriptor score
+at least 0.55 and NDT confidence at least 2.2 (also respecting the configured NDT
+initialization threshold). A competing accepted pose at least 3 m or 20 degrees
+away with at least 90% of its NDT score rejects the result. These are rejection
+heuristics, not a proof of globally unique alignment.
+
+Three successive candidates must agree with scan-end LiDAR odometry within 1 m
+and 10 degrees. Queries are at least 0.5 sensor seconds apart. Online search uses
+one worker, one owned scan, a separate map matcher and at most one outstanding
+result. It does not queue every scan for recognition. The result is propagated
+from its original scan using LiDAR-frame odometry and revalidated on the current
+scan before publication. Offline search is synchronous for reproducibility.
+Manual initial poses override search; global mode cannot fall back to the map
+origin. Its extra matcher/index are released after initialization or a manual
+override once the worker finishes. Candidate refinement does not accumulate the
+ordinary initializer's failed-pose history or announce tracking success.
+Shutdown joins the worker before releasing its data.
+
+The versioned binary index contains explicit scalar fields, an endian marker,
+validated poses/descriptors and an FNV-1a fingerprint of `global.pcd` to detect
+accidentally mixed maps. It supports up to 20,000 keyframes; mapping beyond this
+still exports its map but reports that no place index was written. Old maps remain
+usable through the original/manual initialization. Index loading checks size,
+version, finite values and the cloud fingerprint; the fingerprint is not a
+security signature. Index construction does not alter map points or calibration.
+
+The existing IMU initializer estimates gyro bias from its initial sample mean.
+Starting during a turn can therefore corrupt local odometry even when place
+recognition finds the correct region. Initialize while stationary; do not loosen
+temporal agreement thresholds to hide this failure. Repeated structures and
+inconsistent revisits can also yield alternative map fits. Evaluate initial-pose
+correctness separately from NDT convergence, tracking coverage and clean exit.
+
 ## 5. DDS and bounded input memory
 
 Both presets use BEST_EFFORT. ROS callbacks enqueue sensor work; scan matching

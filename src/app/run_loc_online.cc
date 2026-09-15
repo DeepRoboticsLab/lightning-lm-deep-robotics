@@ -8,6 +8,7 @@
 DEFINE_string(config, "config/m20_pro.yaml", "Sensor configuration YAML (M20 Pro or Mid360)");
 DEFINE_string(map_path, "", "Map directory (localization defaults to system.map_path)");
 DEFINE_string(trajectory, "", "Optional output TUM trajectory file");
+DEFINE_bool(global_init, false, "Find the initial location using the map's saved place index");
 DEFINE_bool(rviz, false, "Publish current LiDAR pose, scan and session trajectory for RViz2 (no map)");
 
 int main(int argc, char** argv) {
@@ -21,6 +22,7 @@ int main(int argc, char** argv) {
         lightning::YAML_IO yaml(FLAGS_config);
         lightning::LocSystem::Options options;
         options.trajectory_path_ = FLAGS_trajectory;
+        options.global_init_ = FLAGS_global_init;
         options.with_rviz_ = FLAGS_rviz;
         lightning::LocSystem system(options);
         if (!system.Init(FLAGS_config, FLAGS_map_path)) return 1;

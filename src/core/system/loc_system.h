@@ -33,6 +33,7 @@ class LocSystem {
         std::string trajectory_path_;
         bool pub_tf_ = true;  // 是否发布tf
         bool with_rviz_ = false;
+        bool global_init_ = false;
     };
 
     explicit LocSystem(Options options);

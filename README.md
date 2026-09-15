@@ -216,8 +216,33 @@ For live sensor input, follow [onboard localization](#8-onboard-localization).
 <details>
 <summary>4.3 Initialization and pose output</summary>
 
-Initialization starts around the map's saved starting pose. Replaying the mapping
-recording needs no manual initial pose. To start elsewhere, publish
+By default, initialization starts around the map's saved starting pose. NDT
+refines a nearby pose; its heading search does not search positions throughout
+the map. Replaying the mapping recording normally needs no manual initial pose.
+
+To find the starting location automatically, add `--global_init` to either
+localization command. For example:
+
+```bash
+ros2 run lightning run_loc_offline \
+  --config "$CONFIG" --input_bag "$BAG" --map_path "$MAP" \
+  --global_init --trajectory "$PWD/localization.tum"
+```
+
+This requires `places.bin`, saved alongside the tiles when mapping with this
+version. Keep the complete map directory together. Older maps still work with
+the default initialization; remap to add the index. Automatic initialization
+recognizes mapped views, checks competing scan matches, and requires agreement
+across successive scans before publishing a pose. It can take longer in similar
+corridors or with a limited view. An offline run exits with an error if the
+recording ends before initialization succeeds.
+
+Keep the robot stationary while its IMU initializes. Cutting a recording in the
+middle of a turn can make real rotation look like gyro bias; finding the map
+location does not correct that separate initialization problem. A very short
+recording tail may also end before enough matching scans arrive.
+
+To supply a location yourself, publish
 `geometry_msgs/msg/PoseWithCovarianceStamped` on `/initialpose` with
 `header.frame_id: map`, for example with RViz's **2D Pose Estimate** tool.
 This supplies a starting guess; estimation remains 3D.
@@ -644,8 +669,10 @@ python3 scripts/onboard.py slam
 Or, after stopping mapping, start localization against a saved map:
 
 ```bash
-python3 scripts/onboard.py localize data/onboard_map
+python3 scripts/onboard.py localize data/onboard_map --global-init
 ```
+
+See [section 8](#8-onboard-localization) for initialization and older maps.
 
 Use **Ctrl+B, then D** to detach whenever needed. Closing SSH afterward leaves
 the algorithm running. Run only one mapping or localization process at a time.
@@ -924,8 +951,16 @@ Run inside the [tmux algorithm session](#632-start-mapping-or-localization) to
 keep localization running through SSH disconnects:
 
 ```bash
-python3 scripts/onboard.py localize data/onboard_map
+python3 scripts/onboard.py localize data/onboard_map --global-init
 ```
+
+This searches the mapping views saved in `places.bin`, so you can start away
+from the mapping origin without entering a pose. Keep the robot still while the
+IMU initializes. Wait for a confirmed location before relying on the displayed
+pose; similar surroundings can require more observations.
+
+For a map saved by an older version, omit `--global-init` and start near its
+mapping origin or supply a pose as described in section 8.4.
 
 ### 8.2 View the location, LiDAR, and trajectory
 
@@ -955,11 +990,25 @@ settings as online dataset playback. Maps from recorded data and live mapping
 use the same directory format; keep the complete tiles and use the matching
 sensor calibration.
 
-Initialization starts around the map's saved starting pose. Start near that
-pose, or provide an initial estimate on `/lightning/initialpose` using
+With `--global-init`, localization searches the saved mapping views and refines
+candidate poses in full 3D. It checks alternative locations and agreement with
+LiDAR odometry across three observations. Search runs separately from online
+sensor processing. This finds an initial location; subsequent tracking uses the
+same localization algorithm as before.
+
+Automatic initialization needs distinctive overlapping geometry and the same
+sensor calibration as mapping. Repeated structures and map drift can still
+support plausible alternative poses; a high matching score is not an accuracy
+guarantee. Inspect the alignment and use a manual estimate when necessary.
+
+Without this option, initialization starts around the map's saved starting pose.
+The fallback searches heading at that position, not other places in the map.
+Start near that pose, or provide an initial estimate on `/lightning/initialpose` using
 `geometry_msgs/msg/PoseWithCovarianceStamped` with `header.frame_id: map`. The
 RViz **2D Pose Estimate** tool is configured for this topic; it supplies a starting
-guess and does not constrain subsequent estimation to 2D.
+guess and does not constrain subsequent estimation to 2D. A manual estimate
+overrides a pending automatic search. Use a full 3D pose for a different floor
+or a map whose Z axis is tilted.
 
 The RViz scan, arrow, and path use accepted scan-to-map matches. Before
 initialization succeeds they remain empty; if matching fails they retain the last

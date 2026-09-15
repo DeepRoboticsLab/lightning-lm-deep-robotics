@@ -21,6 +21,7 @@ add_library(${PROJECT_NAME}.libs SHARED
         core/maps/tiled_map_chunk.cc
 
         core/localization/localization_result.cc
+        core/localization/global_localization.cc
         core/localization/lidar_loc/lidar_loc.cc
         core/localization/lidar_loc/pclomp/ndt_omp.cpp
         core/localization/lidar_loc/pclomp/voxel_grid_covariance_omp.cpp

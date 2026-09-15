@@ -7,6 +7,7 @@
 #include "core/lio/laser_mapping.h"
 #include "core/loop_closing/loop_closing.h"
 #include "core/maps/tiled_map.h"
+#include "core/localization/global_localization.h"
 #include "ui/pangolin_window.h"
 #include "wrapper/ros_utils.h"
 #include "wrapper/online_visualization.h"
@@ -200,6 +201,9 @@ bool SlamSystem::SaveMap(const std::string& path) {
     tm.ConvertFromFullPCD(global_map, start_pose, save_path);
 
     if (pcl::io::savePCDFileBinaryCompressed(save_path + "/global.pcd", *global_map) < 0) return false;
+    if (!loc::GlobalLocalization::SaveIndex(save_path, lio_->GetAllKeyframes(), options_.with_loop_closing_)) {
+        LOG(WARNING) << "Map saved without a global initialization index; use a manual initial pose";
+    }
     // pcl::io::savePCDFileBinaryCompressed(save_path + "/global_no_loop.pcd", *global_map_no_loop);
     // pcl::io::savePCDFileBinaryCompressed(save_path + "/global_raw.pcd", *global_map_raw);
 

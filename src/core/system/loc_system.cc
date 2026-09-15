@@ -17,6 +17,7 @@ bool LocSystem::Init(const std::string &yaml_path, const std::string &map_overri
     loc::Localization::Options opt;
     opt.online_mode_ = true;
     opt.trajectory_path_ = options_.trajectory_path_;
+    opt.global_init_ = options_.global_init_;
     loc_ = std::make_shared<loc::Localization>(opt);
 
     YAML_IO yaml(yaml_path);

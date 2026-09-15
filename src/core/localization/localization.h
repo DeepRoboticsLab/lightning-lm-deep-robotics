@@ -34,6 +34,7 @@ class Localization {
 
         std::string trajectory_path_;
         bool online_mode_ = false;  // 在线模式还是离线模式
+        bool global_init_ = false;
         bool with_ui_ = false;      // 是否带ui
 
         /// 参数
@@ -44,7 +45,7 @@ class Localization {
     };
 
     Localization(Options options = Options());
-    ~Localization() { Finish(); }
+    ~Localization();
 
     /**
      * 初始化，读配置参数
@@ -72,6 +73,7 @@ class Localization {
 
     /// 结束，保存临时地图
     void Finish();
+    bool HasAcceptedPose() const { return valid_match_count_ != 0; }
 
     /// 异步处理函数
     void LidarLocProcCloud(CloudPtr);
@@ -95,6 +97,9 @@ class Localization {
    private:
     /// 模块  ========================================================================================================
     void ProcessBufferedLidar(bool quiet_sync = false);
+    bool TryGlobalInitialization(const CloudPtr& scan);
+    struct GlobalState;
+    std::unique_ptr<GlobalState> global_;
     size_t lidar_messages_ = 0, imu_messages_ = 0;
     std::ofstream trajectory_;
     size_t match_count_ = 0, valid_match_count_ = 0;

@@ -44,6 +44,7 @@ class LidarLoc {
         float min_tracking_confidence_ = 1.0;          // Reject unsupported scan-to-map matches.
         float scan_voxel_size_ = 0.5;
         bool init_with_fp_ = true;                     // 是否使用功能点进行初始化
+        bool allow_default_initialization_ = true;    // Global mode must not fall back to the map origin.
         bool enable_parking_static_ = false;           // 是否在静止时输出固定位置
         bool enable_icp_adjust_ = false;               // 是否使用icp调整ndt匹配结果提高定位精度
 
@@ -118,6 +119,10 @@ class LidarLoc {
      * @return
      */
     bool Localize(SE3& pose, double& confidence, CloudPtr input, CloudPtr output, bool use_rough_res = false);
+
+    // For the separate, uninitialized global-search matcher. No pose acceptance,
+    // recovery history or tracking state is updated while checking a hypothesis.
+    bool RefineInitialCandidate(const CloudPtr& input, SE3& pose, double& confidence);
 
     /// 设置UI
     void SetUI(std::shared_ptr<ui::PangolinWindow> ui) { ui_ = ui; }

@@ -10,6 +10,7 @@ DEFINE_string(config, "config/m20_pro.yaml", "Sensor configuration YAML (M20 Pro
 DEFINE_string(input_bag, "", "ROS 2 bag directory or SQLite .db3 file");
 DEFINE_string(map_path, "", "Map directory (localization defaults to system.map_path)");
 DEFINE_string(trajectory, "", "Optional output TUM trajectory file");
+DEFINE_bool(global_init, false, "Find the initial location using the map's saved place index");
 
 int main(int argc, char** argv) {
     google::InitGoogleLogging(argv[0]);
@@ -23,6 +24,7 @@ int main(int argc, char** argv) {
         lightning::loc::Localization::Options options;
         options.online_mode_ = false;
         options.trajectory_path_ = FLAGS_trajectory;
+        options.global_init_ = FLAGS_global_init;
         lightning::loc::Localization system(options);
         const auto map_path = FLAGS_map_path.empty() ? yaml.GetValue<std::string>("system", "map_path") : FLAGS_map_path;
         if (!system.Init(FLAGS_config, map_path)) return 1;
@@ -38,6 +40,11 @@ int main(int argc, char** argv) {
         }
         bag.Go();
         system.Finish();
+        if (FLAGS_global_init && !system.HasAcceptedPose()) {
+            LOG(ERROR) << "No unambiguous initial pose before the recording ended. "
+                          "IMU initialization requires a stationary start; a short or ambiguous view may need more data.";
+            return 2;
+        }
         LOG(INFO) << "done";
         return 0;
     } catch (const std::exception& e) {
