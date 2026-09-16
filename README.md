@@ -2,6 +2,9 @@
 
 ![Seven 3D reconstructions](doc/images/seven-datasets-overview.png)
 
+Watch the Lightning-LM tutorial on [YouTube](https://youtu.be/1S8X03tm3-8?si=2YWOS35JFoj5kiHp)
+or [Bilibili](https://b23.tv/jfz4q8u).
+
 3D LiDAR mapping and localization for **Deep Robotics M20 Pro** and
 **Lite3 EDU with Jetson AGX and Livox Mid360**.
 Build maps with loop closure, view reconstruction live, and localize against saved
