@@ -52,7 +52,12 @@ The bundled `livox_ros_driver2` contains messages only, not a hardware driver.
 
 Keep the README useful to operators: numbered sections, copyable commands and
 closed-by-default `<details>` for extended explanations, technical details and
-results. Keep dates, branch names, machine-specific paths, experiments and long
+results. Main sections and workflow subsections are also collapsible, including
+separate M20/Lite3 deployment and setup blocks. Preserve their explicit fragment
+anchors and numbered summary titles. Nest subsections under the correct parent,
+keep all details closed by default, and retain blank lines around Markdown/code
+inside HTML blocks. Check balanced tags, command prerequisites and internal
+links after structural edits. Keep dates, branch names, machine-specific paths, experiments and long
 logs out of it. Put durable maintenance guidance here, implementation explanations
 in `doc/implementation.md`, and new session evidence in ignored outputs.
 
@@ -63,6 +68,19 @@ Preserve the README structure:
 - Section 6: connections and setup, including one combined Lite3 EDU/AGX/Mid360
   subsection for the driver, calibration and saved environment.
 - Sections 7 and 8: shared mapping and localization commands using `onboard.py`.
+- Section 6.3 is only the tmux lifecycle; link to algorithm/viewer workflows
+  instead of duplicating them. Keep recording and replay together in section 7.4,
+  terminal fields and troubleshooting in section 9, and technical maintenance
+  details here or in `doc/implementation.md`. The README is an operator guide,
+  not a chronological record of fixes or experiments.
+- Label the host/account for commands and include an explicit `cd` before local
+  scripts or relative paths. Prepare each SSH terminal before shared commands:
+  `LIGHTNING_DIR=/home/user/lightning-lm` in the M20 root shell, or the AGX user's
+  checkout path. Start tmux with `-c "$LIGHTNING_DIR"` and set the variable from
+  `$PWD` inside each new session: an existing tmux server may have an older
+  environment without this custom variable. It identifies the directory;
+  ROS/DDS/CPU/calibration still load through `onboard.py`. Do not assume root's
+  `~` is the deployment user's home, or that a fresh shell inherits dataset paths.
 
 Maintain the text-free seven-panel header image. Never synthesize, warp or
 selectively clean clouds to improve a reported reconstruction.
@@ -192,6 +210,39 @@ exclude build products, `__pycache__` and `.pyc`. Never transfer x86 binaries to
   A robot URDF's LiDAR-to-body transform is a separate calibration.
 - Reject non-finite, unconverged or low-confidence localization matches. Update
   map targets after tile loading, export only accepted poses, and preserve maps.
+- Pose lookup must accept an exact first timestamp, including a singleton queue;
+  it needs no interpolation. Do not invent extrapolation from one sample or hide
+  genuine missing-odometry failures. Test empty/singleton queues, first/last
+  endpoints, interior interpolation and out-of-range queries. Never inspect a
+  queue's back element while reporting an error unless it is nonempty.
+  The IMU prediction filter must be seeded from the first initialized scan before
+  exposing DR poses; an initialized IMU alone does not initialize that filter.
+  Seed localization's DR history with the exact scan anchor before its first
+  match. Do not publish default-state timestamps or suppress epoch-sized gaps.
+  Predict from that filter's own timestamp and anchor resets at scan end, not at
+  the preceding IMU sample. Reintegrating that partial interval causes backwards
+  DR timestamps after corrections. Keep acquisition times exact and reject
+  backwards prediction intervals without changing deskew or LiDAR correction.
+- Route point-cloud voxel filtering through `utils/pointcloud_utils.cc`. Keep the
+  normal PCL path when its signed 32-bit coordinates and flattened grid fit.
+  Otherwise use sparse 64-bit coordinate tuples, retaining the requested leaf
+  size and PCL's XYZ/intensity centroids; do not enlarge the leaf size or pass the
+  whole cloud through unfiltered. Bound both coordinate conversion and grid
+  products, including negative coordinates and large absolute offsets. Reject
+  invalid leaf sizes; report discarded non-finite points and unrepresentable
+  coordinates. Downsampling follows deskewing; the fallback's custom timestamp
+  field is zero, since PCL's centroid does not aggregate it. Sensor synchronization
+  must continue using native timestamps before filtering. Test ordinary PCL
+  equivalence, sparse huge extents, centroid values, invalid input and both PCL
+  versions; replay long routes that actually exercise loop/export fallback.
+- Dynamic tile loading must honor `maps.load_dyn_cloud` on initial load, revisits
+  and dynamic updates. An absent optional tile is a loaded empty layer; do not
+  repeatedly call PCDReader for it or overwrite existing in-memory updates.
+  Required static tiles and corrupt existing enabled dynamic tiles must fail
+  explicitly, never be marked loaded after a failed read. Preserve SHORT/LONG/
+  PERSISTENT lifetime policies and map files during read-only localization.
+  Test disabled/present/absent/corrupt layers, unloading and revisiting, missing
+  required tiles, and reference-map hashes.
 - Global initialization is opt-in (`--global_init`, onboard `--global-init`).
   Preserve legacy/manual initialization for maps without `places.bin`. The index
   uses actual mapping keyframes and the poses used for map assembly; never seed
@@ -212,6 +263,67 @@ exclude build products, `__pycache__` and `.pyc`. Never transfer x86 binaries to
 - Preserve loop rejection and graph bookkeeping. Inactive edges must stop
   contributing. Check Miao's fixed-vertex/incremental-solver behavior before
   assuming an operation is safe.
+  Keep `loop_closing.ndt_score_th: 0.6` in both maintained presets and `0.6` in
+  `LoopClosing::Options`, covering dataset replay and new M20/AGX runtime copies.
+  Acceptance uses a strict score comparison, followed by graph outlier checks;
+  the score is not a probability. Localization confidence thresholds are separate.
+  Reconfiguration must preserve existing runtime YAML and explicit calibration;
+  update only the requested threshold when migrating an existing deployment.
+  Incremental initialization refreshes active edges from the graph, including
+  level changes and reactivation. Keep incremental vertex/block allocation:
+  `BuildSystem` clears allocated Hessian blocks before accumulating active edges.
+  After rejecting loops, restore the pre-solve estimates and solve without those
+  constraints before exporting poses. Do not reclassify stale residuals of already
+  inactive edges. Test contradictory constraints, reactivation, all-level solves,
+  and the actual loop backend's exported poses. A failed registration must not
+  advance the successful-loop cooldown. `loop_retry_kf_gap` defaults to five new
+  keyframes after a failed attempt; `loop_kf_gap` still governs successful loops.
+  Retrying provides another opportunity, not guaranteed recognition. Stationary
+  waiting does not create new keyframes, and this remains local geometric search.
+
+### Internal SLAM input recording
+
+`onboard.py slam --record-bag` forwards `--record_bag`; recording defaults off.
+Both mapping executables can record. `wrapper/slam_recorder` snapshots each
+synchronized `MeasureGroup` immediately before IMU initialization/deskewing.
+`ImuProcess` sorts and modifies the input cloud in place: never enqueue a shared
+cloud pointer for later serialization. Keep the selected pre-deskew XYZ/intensity,
+double point offsets in milliseconds, native IMU doubles, scan begin/end times,
+and exact grouping/order. Include initialization and scans whose correction is
+skipped: they still affect IMU prediction/deskewing. Do not record raw rejected
+points, synchronization-queue evictions, unused tail scans, GUI/TF/map data or
+IMUs used only by the display predictor. This is the mapping filter's input,
+not a raw sensor archive or a replay of thread scheduling.
+
+Use the versioned `msg/SlamInput.msg` on `/lightning/slam_input` in a standard
+SQLite ROS 2 bag beside the console session log. Save the exact runtime YAML.
+Replay with `run_slam_offline --replay_recording`: validate version/layout and
+contiguous sequence IDs, then call the same synchronized LIO path, bypassing
+preprocessing and synchronization once. Bag timestamps follow scan end and are
+monotonic for ordering; native double timestamps inside each message are the
+estimator's authority. Do not use reception time to replace acquisition time.
+
+The ordered sensor worker only snapshots into a bounded 64 MiB queue; the disk
+thread owns serialization and the ROS bag writer, with its extra cache disabled.
+The bound includes the in-flight input, not serialization/SQLite/OS buffers or
+total process memory. No compression, silent eviction, rate throttling, or waits
+for storage on the estimator thread. On overflow/write failure, stop accepting
+recording inputs, report INCOMPLETE and keep SLAM running. Drain an accepted prefix
+where possible. Finish after the sensor worker drains; finalize bag metadata and
+an atomic `recording.yaml` with consumed/written counts. A normal exit with failed
+recording returns 2. An unfinished marker is not proof of a complete recording;
+SIGKILL/power loss cannot finalize it. Recorder completeness does not imply no
+DDS/sensor-queue loss. Preserve those errors in the detailed log.
+
+Check exact decoded values (CDR alignment padding need not be byte-identical),
+scan/IMU counts and timestamp intervals, no double filtering/deskewing, immutable
+snapshots, clean shutdown, bounded overflow and disk-write failures. Compare
+record/replay raw keyframe poses across both sensor families and all recordings.
+Measure enabled/disabled overhead at normal sensor rate on each robot separately
+from compiling. Preserve Foxy's `rosbag2_cpp::StorageOptions` versus Humble's
+`rosbag2_storage::StorageOptions` and use the common serialized-message writer
+API. Do not promise lossless acquisition or moving-route accuracy from a
+stationary recording test.
 
 ## 5. DDS and onboard deployment
 
@@ -229,6 +341,13 @@ cross-host UDP. Topic discovery alone does not prove delivery.
 Configure `onboard.py` once with `configure m20` or `configure agx`. It loads
 ignored `data/onboard.json` and `data/onboard.yaml` for every child command.
 Repeated configuration preserves runtime YAML unless `--config` replaces it.
+New default runtime copies for both platforms set `fasterlio.skip_lidar_num: 2`;
+recording presets retain `0`. Honor the supplied value with explicit `--config`,
+and preserve existing runtime tuning on repeated configuration. Skipping limits
+LiDAR corrections/map updates to every second scan, after IMU prediction and
+deskewing; it does not reduce sensor publication or guarantee a twofold speedup.
+Check new M20/AGX settings, saved-setting reuse, explicit overrides and unchanged
+sensor calibration. M20 user feedback on this setting does not qualify AGX motion.
 Do not persist DISPLAY/XAUTHORITY or edit shell startup files: X11 belongs to the
 current connection. Build child environments from the chosen workspace, clearing
 inherited ROS overlay paths while preserving SSH authorization. Never source
@@ -324,6 +443,40 @@ OS and firmware. Workstation RSS does not guarantee onboard performance. Avoid
 heavy concurrent GUIs when diagnosing delivery; never call best effort lossless.
 
 ## 6. Visualization maintenance
+
+### Terminal status
+
+The four estimator applications share `utils/console.{h,cc}`. `--console=auto`
+refreshes a compact TTY display at 1 Hz; pipes, redirected stderr and `TERM=dumb`
+use plain periodic summaries. `--console=verbose` retains full terminal logs.
+Keep full glog diagnostics in the printed session directory under ignored `log/`.
+Warnings/errors and map-save events must remain visible; aggregate repeated
+issues by source with counts, retaining every logged occurrence in the file.
+Print each source's first warning/error immediately, repeat at most every five
+seconds, and flush any remaining repeat count at shutdown. Fatal messages and
+crash traces must remain visible even if the process aborts without cleanup.
+Do not infer estimator state by parsing free-form log strings. Sensor counts
+come from subscription callbacks (offline: bag callbacks), and correction/match
+counts from their processing sites. Label wall-time rates and LIO versus accepted
+map poses accurately. Never hold the metrics mutex during terminal I/O or change
+sensor processing to update a display. Preserve `onboard.py status --json`.
+In interactive mode, route stderr and only stdout attached to the same terminal
+through the external-output reader. This lets ROS/PCL messages use the same
+erase/event/redraw lock while preserving `/rosout`, external diagnostic bytes in
+`external.log`, and separately redirected stdout. Drain that reader and restore
+descriptors before leaving the final status. Keep plain/verbose descriptors
+unchanged. Cap partial-line buffering and sanitize terminal controls; do not
+interpret foreign text as estimator state. Use the preserved terminal descriptor
+for width checks. Narrow terminals need a short display; resizing must not erase
+unknown reflowed history. No raw input mode, alternate screen, or hidden cursor
+is required. Retain Linux/POSIX and C++17 compatibility with Foxy/Humble on both
+architectures without adding terminal-library dependencies.
+Waiting for asynchronous IMU coverage, and the IMU initializer producing no
+deskewed scan yet, are normal INFO diagnostics. Keep empty-scan warnings after
+initialization, timestamp rejections, queue overflows and match failures visible.
+Test PTY, pipe/plain/verbose output, narrow/resized terminals, repeated errors,
+concurrent logging, Ctrl+C, and complete diagnostic files. Keep finite setup,
+installer and external-driver output independent from this estimator display.
 
 ### Live scan, pose and trajectory
 

@@ -64,7 +64,7 @@ loop_closing:
   min_id_interval: 20
   closest_id_th: 50
   max_range: 20.0
-  ndt_score_th: 1.3
+  ndt_score_th: 0.6
   with_height: false
   optimize_on_every_keyframe: false
 lidar_loc:

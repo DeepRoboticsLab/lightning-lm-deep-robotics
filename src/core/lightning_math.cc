@@ -1,7 +1,7 @@
 #include "core/lightning_math.hpp"
+#include "utils/pointcloud_utils.h"
 
 #include <Eigen/SVD>
-#include <pcl/filters/voxel_grid.h>
 
 namespace lightning::math {
 
@@ -20,14 +20,7 @@ Eigen::Matrix<double, 2, 3> PseudoInverse(const Eigen::Matrix<double, 3, 2>& X) 
 }
 
 CloudPtr VoxelGrid(CloudPtr cloud, float voxel_size) {
-    pcl::VoxelGrid<PointType> voxel;
-    voxel.setLeafSize(voxel_size, voxel_size, voxel_size);
-    voxel.setInputCloud(cloud);
-
-    CloudPtr output(new PointCloudType);
-    voxel.filter(*output);
-
-    return output;
+    return lightning::VoxelGrid(cloud, voxel_size);
 }
 
 }  // namespace lightning::math

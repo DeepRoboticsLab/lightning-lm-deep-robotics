@@ -16,6 +16,7 @@
 #include "io/yaml_io.h"
 #include "ui/pangolin_window.h"
 #include "utils/timer.h"
+#include "utils/pointcloud_utils.h"
 
 namespace lightning::loc {
 
@@ -134,12 +135,7 @@ bool LidarLoc::ProcessCloud(CloudPtr cloud_input, double scan_end_time) {
         return false;
     }
 
-    CloudPtr cloud(new PointCloudType);
-    pcl::VoxelGrid<PointType> voxel;
-    const float size = options_.scan_voxel_size_;
-    voxel.setLeafSize(size, size, size);
-    voxel.setInputCloud(cloud_input);
-    voxel.filter(*cloud);
+    CloudPtr cloud = VoxelGrid(cloud_input, options_.scan_voxel_size_);
     if (cloud->size() < 50) {
         UL lock(result_mutex_);
         localization_result_.timestamp_ = scan_end_time;
@@ -421,12 +417,7 @@ bool LidarLoc::UpdateGlobalMap() {
 
     if (options_.enable_icp_adjust_) {
         ICPType::Ptr icp(new ICPType());
-        CloudPtr map_cloud(new PointCloudType);
-        pcl::VoxelGrid<PointType> voxel;
-        auto sz = 0.5;
-        voxel.setLeafSize(sz, sz, sz);
-        voxel.setInputCloud(map_->GetAllMap());
-        voxel.filter(*map_cloud);
+        CloudPtr map_cloud = VoxelGrid(map_->GetAllMap(), 0.5f);
         icp->setInputTarget(map_cloud);
         icp->setMaximumIterations(4);
         icp->setTransformationEpsilon(0.01);
@@ -885,13 +876,7 @@ bool LidarLoc::Localize(SE3& pose, double& confidence, CloudPtr input, CloudPtr 
 
     if (options_.enable_icp_adjust_ && loc_inited_) {
         Eigen::Matrix4f adjust_trans;
-        CloudPtr input_voxel(new PointCloudType);
-        pcl::VoxelGrid<PointType> voxel_icp;
-
-        double ls = 0.2;
-        voxel_icp.setLeafSize(ls, ls, ls);
-        voxel_icp.setInputCloud(input);
-        voxel_icp.filter(*input_voxel);
+        CloudPtr input_voxel = VoxelGrid(input, 0.2f);
         pcl_icp_->setInputSource(input_voxel);
         Timer::Evaluate([&]() { pcl_icp_->align(*output, trans); }, "pcl_icp adjust", true);
         adjust_trans = pcl_icp_->getFinalTransformation();

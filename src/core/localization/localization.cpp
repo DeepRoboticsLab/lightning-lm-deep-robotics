@@ -9,6 +9,7 @@
 #include "core/localization/pose_graph/pgo.h"
 #include "io/yaml_io.h"
 #include "ui/pangolin_window.h"
+#include "utils/console.h"
 
 namespace lightning::loc {
 
@@ -108,6 +109,7 @@ bool Localization::Init(const std::string& yaml_path, const std::string& global_
         }
     });
 
+    console::State(options_.global_init_ ? "searching map" : "initializing localization");
     return true;
 }
 
@@ -118,6 +120,7 @@ void Localization::ProcessLidarMsg(const sensor_msgs::msg::PointCloud2::SharedPt
     }
 
     ++lidar_messages_;
+    if (!options_.online_mode_) console::ReceivedLidar();
     // Use exactly the same preprocessing and time buffering as mapping.
     lio_->ProcessPointCloud2(cloud);
     ProcessBufferedLidar();
@@ -130,6 +133,7 @@ void Localization::ProcessLivoxLidarMsg(const livox_ros_driver2::msg::CustomMsg:
     }
 
     ++lidar_messages_;
+    if (!options_.online_mode_) console::ReceivedLidar();
     lio_->ProcessPointCloud2(cloud);
     ProcessBufferedLidar();
 }
@@ -140,6 +144,13 @@ void Localization::ProcessBufferedLidar(bool quiet_sync) {
     }
 
     auto lo_state = lio_->GetState();
+
+    // The IMU predictor is first anchored by this scan. Supply that exact anchor
+    // before matching; later IMU callbacks provide the prediction history.
+    if (last_match_time_ < 0) {
+        lidar_loc_->ProcessDR(lo_state);
+        pgo_->ProcessDR(lo_state);
+    }
 
     lidar_loc_->ProcessLO(lo_state);
     pgo_->ProcessLidarOdom(lo_state);
@@ -179,6 +190,7 @@ void Localization::LidarLocProcCloud(CloudPtr scan_undist) {
     last_match_time_ = lio_->GetState().timestamp_;
     if (!TryGlobalInitialization(scan_undist)) {
         ++match_count_;
+        console::State("searching map: waiting for confirmation");
         LOG(INFO) << "Global initialization waiting for an unambiguous, repeatable match";
         return;
     }
@@ -191,6 +203,8 @@ void Localization::LidarLocProcCloud(CloudPtr scan_undist) {
     }
     LOG(INFO) << "Localization match: valid=" << res.lidar_loc_valid_ << ", confidence=" << res.confidence_;
     ++match_count_;
+    const auto position = res.pose_.translation();
+    console::Match(res.lidar_loc_valid_, res.confidence_, position.x(), position.y(), position.z());
     if (res.lidar_loc_valid_) {
         ++valid_match_count_;
         // NDT returns map_T_lidar for this deskewed scan, at its scan-end time.
@@ -287,6 +301,7 @@ void Localization::ProcessIMUMsg(IMUPtr imu) {
 
     /// 里程计处理IMU
     ++imu_messages_;
+    if (!options_.online_mode_) console::ReceivedImu();
     lio_->ProcessIMU(imu);
     if (options_.online_mode_) ProcessBufferedLidar(true);
 

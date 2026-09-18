@@ -242,6 +242,7 @@ class TiledMap {
     void ClearMap();
 
    private:
+    void LoadDynamicChunk(const std::shared_ptr<MapChunk>& chunk);
     /**
      * 测试某个点是否落在动态区域
      * @param pt 给定点

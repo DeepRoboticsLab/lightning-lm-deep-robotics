@@ -11,6 +11,8 @@
 #include "ui/pangolin_window.h"
 #include "wrapper/ros_utils.h"
 #include "wrapper/online_visualization.h"
+#include "utils/console.h"
+#include "wrapper/slam_recorder.h"
 
 #include <yaml-cpp/yaml.h>
 #include <filesystem>
@@ -28,6 +30,10 @@ bool SlamSystem::Init(const std::string& yaml_path) {
     }
 
     auto yaml = YAML::LoadFile(yaml_path);
+    if (!options_.recording_directory_.empty()) {
+        recorder_ = std::make_unique<SlamRecorder>(options_.recording_directory_, yaml_path);
+        lio_->SetInputCallback([this](const MeasureGroup& input) { recorder_->Record(input); });
+    }
     options_.with_loop_closing_ = yaml["system"]["with_loop_closing"].as<bool>();
     options_.with_visualization_ = yaml["system"]["with_ui"].as<bool>();
     options_.with_2dvisualization_ = yaml["system"]["with_2dui"].as<bool>();
@@ -96,6 +102,7 @@ bool SlamSystem::Init(const std::string& yaml_path) {
 
         imu_sub_ = node_->create_subscription<sensor_msgs::msg::Imu>(
             imu_topic_, imu_qos, [this](sensor_msgs::msg::Imu::SharedPtr msg) {
+                console::ReceivedImu();
                 IMUPtr imu = std::make_shared<IMU>();
                 imu->timestamp = ToSec(msg->header.stamp);
                 imu->linear_acceleration =
@@ -108,11 +115,13 @@ bool SlamSystem::Init(const std::string& yaml_path) {
 
         cloud_sub_ = node_->create_subscription<sensor_msgs::msg::PointCloud2>(
             cloud_topic_, lidar_qos, [this](sensor_msgs::msg::PointCloud2::SharedPtr cloud) {
+                console::ReceivedLidar();
                 sensor_queue_.AddMessage([this, cloud]() { ProcessLidar(cloud); }, cloud->data.size() + sizeof(*cloud) + 256);
             });
 
         livox_sub_ = node_->create_subscription<livox_ros_driver2::msg::CustomMsg>(
             livox_topic_, lidar_qos, [this](livox_ros_driver2::msg::CustomMsg ::SharedPtr cloud) {
+                console::ReceivedLidar();
                 sensor_queue_.AddMessage([this, cloud]() { ProcessLidar(cloud); },
                                         cloud->points.size() * sizeof(cloud->points[0]) + sizeof(*cloud) + 128);
             });
@@ -134,6 +143,7 @@ bool SlamSystem::Init(const std::string& yaml_path) {
 
 SlamSystem::~SlamSystem() {
     sensor_queue_.Quit();
+    FinishRecording();
     LOG(INFO) << "SLAM input: lidar=" << lidar_messages_ << ", imu=" << imu_messages_;
     if (lc_) lc_->WaitUntilIdle();
     if (ui_) {
@@ -144,6 +154,7 @@ SlamSystem::~SlamSystem() {
 void SlamSystem::StartSLAM(std::string map_name) {
     map_name_ = map_name;
     running_ = true;
+    console::State("mapping");
 }
 
 void SlamSystem::SaveMap(const SaveMapService::Request::SharedPtr request,
@@ -177,7 +188,7 @@ bool SlamSystem::SaveMap(const std::string& path) {
         save_path = "./data/" + map_name_ + "/";
     }
 
-    LOG(INFO) << "slam map saving to " << save_path;
+    console::Event("Saving map: " + save_path);
 
     if (!std::filesystem::exists(save_path)) {
         std::filesystem::create_directories(save_path);
@@ -262,7 +273,7 @@ bool SlamSystem::SaveMap(const std::string& path) {
         }
     }
 
-    LOG(INFO) << "map saved";
+    console::Event("map saved: " + save_path);
     return true;
 }
 
@@ -271,6 +282,7 @@ void SlamSystem::ProcessIMU(const lightning::IMUPtr& imu) {
         return;
     }
     ++imu_messages_;
+    if (!options_.online_mode_) console::ReceivedImu();
     lio_->ProcessIMU(imu);
     if (options_.online_mode_) ProcessBufferedLidar(true);
 }
@@ -278,6 +290,7 @@ void SlamSystem::ProcessIMU(const lightning::IMUPtr& imu) {
 void SlamSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr& cloud) {
     if (!running_) return;
     ++lidar_messages_;
+    if (!options_.online_mode_) console::ReceivedLidar();
     lio_->ProcessPointCloud2(cloud);
     ProcessBufferedLidar();
 }
@@ -285,12 +298,31 @@ void SlamSystem::ProcessLidar(const sensor_msgs::msg::PointCloud2::SharedPtr& cl
 void SlamSystem::ProcessLidar(const livox_ros_driver2::msg::CustomMsg::SharedPtr& cloud) {
     if (!running_) return;
     ++lidar_messages_;
+    if (!options_.online_mode_) console::ReceivedLidar();
     lio_->ProcessPointCloud2(cloud);
     ProcessBufferedLidar();
 }
 
 void SlamSystem::ProcessBufferedLidar(bool quiet_sync) {
     const bool updated = lio_->Run(quiet_sync);
+    HandleLidarResult(updated);
+}
+
+void SlamSystem::ProcessRecordedInput(const MeasureGroup& input) {
+    if (!running_ || options_.online_mode_) throw std::logic_error("Recorded inputs require offline SLAM");
+    ++lidar_messages_;
+    imu_messages_ += input.imu_.size();
+    console::ReceivedLidar();
+    for (size_t i = 0; i < input.imu_.size(); ++i) console::ReceivedImu();
+    HandleLidarResult(lio_->RunSynchronized(input));
+}
+
+bool SlamSystem::FinishRecording() {
+    sensor_queue_.WaitUntilIdle();
+    return !recorder_ || recorder_->Finish();
+}
+
+void SlamSystem::HandleLidarResult(bool updated) {
     auto kf = lio_->GetKeyframe();
     if (updated && rviz_) {
         const auto state = lio_->GetState();

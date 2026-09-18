@@ -8,6 +8,7 @@
 | Mapping system | `src/core/system/slam.cc` | Offline callbacks, online sensor queue, viewer, loop closure, map-save service |
 | Localization system | `src/core/system/loc_system.cc` | ROS input, initial pose, pose/TF output, shutdown |
 | Bag reader | `src/wrapper/bag_io.{h,cc}` | SQLite/CDR reading and native message deserialization |
+| SLAM input recorder | `src/wrapper/slam_recorder.{h,cc}`, `msg/SlamInput.msg` | Bounded asynchronous recording of synchronized inputs and exact-value debug replay |
 | LiDAR odometry | `src/core/lio/laser_mapping.cc` | Input pairing, ESKF update, local point-to-plane registration, keyframes |
 | Preprocessing / deskew | `src/core/lio/pointcloud_preprocess.cc`, `imu_processing.hpp` | Sensor-specific point times and motion compensation |
 | Filter | `src/core/lio/eskf.{hpp,cc}`, `src/common/nav_state.h` | State propagation, covariance, iterated measurement update |
@@ -15,10 +16,29 @@
 | Map localization | `src/core/localization/localization.cpp`, `lidar_loc/lidar_loc.cc` | Odometry prediction, voxelized NDT matching, accepted poses |
 | Tiled maps | `src/core/maps/tiled_map*.{h,cc}` | Map index, loading, unloading, point cloud export |
 | Input queue | `src/utils/async_message_process.h` | Ordered work, count/byte limits, overflow reporting, drain |
+| Terminal status | `src/utils/console.{h,cc}` | TTY refresh, plain summaries, durable events and detailed diagnostic logs |
 | Visualization | `src/ui/pangolin_window*.{h,cc}`, `ui_cloud.cc` | Render thread, viewport, clouds, trajectory, camera controls |
 
 Paths in the localization row are relative to `src/core/localization/`. Source
 headers use `.hpp` where present; use `rg --files src` to locate exact files.
+
+The four estimator entry points start a terminal session before their system
+objects and finish it after sensor/loop workers have stopped. A glog sink keeps
+routine diagnostics in a per-session file while showing warnings/errors with
+source-based repeat counts. Map-save events remain in scrollback. Status is
+updated at 1 Hz on a capable TTY or every 10 seconds in plain output; verbose mode
+uses ordinary glog terminal output. Metrics use a separate mutex from terminal
+writes, with atomic input counters, so a slow display cannot hold their lock.
+Rates are counts per steady-clock interval, not acquisition-clock frequency.
+An ordinary wait for IMU coverage is an INFO diagnostic, not a synchronization
+failure. The IMU initializer also normally returns without a deskewed scan;
+only empty output after initialization warns. Timestamp rejection and
+queue-overflow warnings remain intact.
+On a TTY, a bounded line reader also coordinates direct ROS/library output with
+redraws and writes its original bytes to `external.log`. It captures only file
+descriptors attached to that terminal, preserving separately redirected stdout.
+Shutdown restores descriptors and drains pending messages before the final
+summary; fatal logging restores stderr before glog prints its crash trace.
 
 ## 2. Estimation and the two presets
 
@@ -54,7 +74,7 @@ This model does not lock height or remove the need for IMU timestamps/gyro data.
 | Extrinsic rotation | identity | identity |
 | Loop keyframe gap / minimum ID interval | 20 / 20 | 20 / 20 |
 | Closest ID threshold / loop range | 20 / 60 m | 50 / 20 m |
-| Loop NDT score threshold | 1.0 | 1.3 |
+| Loop NDT score threshold | 0.6 | 0.6 |
 | Optimize on every keyframe | true | false |
 
 Extrinsics use `p_imu = R_imu_lidar p_lidar + t_imu_lidar`. The Mid360 translation
@@ -66,7 +86,48 @@ Both presets disable Anderson acceleration (`use_aa`), fixed-height loop priors,
 viewer. Preserve the six pose degrees of freedom across slopes and multi-level
 scenes. Global map tilt alone is not evidence that a height constraint is needed.
 
+The recording presets keep `fasterlio.skip_lidar_num: 0`. New default onboard
+runtime copies use `2` for both M20 and AGX: after initialization, every second
+scan reaches voxel filtering, LiDAR correction and incremental mapping. IMU
+prediction and deskewing still run on each scan before the skip decision. At
+10 Hz input this gives approximately 5 Hz LiDAR corrections, independent of the
+localization map-matching and RViz publication limits. The launcher preserves
+existing runtime YAML and explicit `--config` sampling choices. Sensor calibration
+is unchanged apart from the documented AGX internal-IMU transform.
+
+### Loop rejection and retries
+
+Miao's incremental path reuses vertex and Hessian-block allocation, but rebuilds
+the active edge list on each initialization. Changing an edge's level must affect
+both the cost and Hessian in subsequent solves; retaining the edge in the graph
+does not make it active. All allocated Hessian blocks are cleared before each
+linearization. The mapping backend marks outliers inactive, restores the estimates
+from before that solve, and solves again before writing optimized keyframe poses.
+This removes rejected constraints without retaining their free-gauge displacement.
+It does not establish that every surviving loop is geometrically correct.
+
+Successful loops retain the `loop_kf_gap` cooldown. Failed attempts instead use
+`loop_retry_kf_gap` (default five new keyframes), bounding extra registration work
+while allowing another attempt on approach to a revisit. Candidates still depend
+on odometry proximity and NDT alignment. A stopped robot creates no new distance
+keyframes, so waiting alone cannot force recognition.
+
 ## 3. Sensor timing and synchronization
+
+Pose lookup accepts an exact first sample, including when the queue contains
+only that sample. Interpolation or extrapolation at a different time still
+requires the existing history and time limits. This avoids rejecting the first
+localization/PGO frame when scan-end odometry is already available at precisely
+the requested timestamp.
+
+The separate IMU prediction filter is seeded from the first initialized scan,
+as it is after later LiDAR corrections. Until that seed exists its pose is not
+available to DR consumers. Localization inserts the exact scan anchor before
+its first match, then receives subsequent predictions through IMU callbacks.
+Prediction advances from its own timestamp to the next native IMU timestamp.
+After a correction it starts at scan end, avoiding a second integration of the
+partial interval between the preceding IMU sample and scan end. This corrects
+the separate DR predictor; the scan deskewing and LiDAR correction are unchanged.
 
 `LaserMapping::SyncPackages()` buffers LiDAR and IMU independently. It computes
 the scan end from the scan header plus the last retained point's relative time
@@ -96,7 +157,41 @@ messages separately from processed scans. Online localization also retries a
 waiting LiDAR scan when IMU arrives; map matching uses the actual LIO scan-end
 timestamp rather than a substituted callback timestamp.
 
+### Optional mapping input recording
+
+`--record_bag` snapshots synchronized input groups immediately before the shared
+IMU/deskew path. Point selection and range filtering have already run, while
+deskewing, voxel filtering, LiDAR corrections and keyframe creation remain part
+of replay. Capture must copy values before `ImuProcess` sorts and modifies the
+input cloud. Initialization and correction-skipped scans are necessary inputs.
+Future/unpaired samples and IMUs used only by the separate display predictor are
+not included. This avoids a second subscriber with a different DDS loss pattern.
+
+`SlamInput` stores float XYZ/intensity arrays, double point offsets and IMU values,
+exact scan bounds, format version and sequence ID. The ordinary SQLite/CDR bag
+has one synchronized-group message per consumed scan. Its timestamp is scan end,
+increased by one nanosecond only when needed to preserve sequence ordering; the
+native double acquisition times inside the message remain unchanged. Debug replay
+uses those values and groups through `RunSynchronized`, without running point
+selection or synchronization a second time. It is an offline mapping input format,
+not a replacement for a raw driver bag or a reproduction of thread scheduling.
+
+An independent disk thread serializes/writes a bounded queue with a 64 MiB input
+budget, including the in-flight group. The ROS bag writer's additional cache is
+disabled. Serialization, SQLite and OS buffers add memory beyond that budget.
+The producer never waits on storage. Overflow or a write failure stops recording
+explicitly while SLAM continues; there is no eviction, compression or adaptive
+downsampling. `recording.yaml` remains unfinished until shutdown drains accepted
+inputs and finalizes the bag. Consumed/written counts establish recorder coverage,
+not completeness of upstream transport. Session logs retain transport failures.
+The saved runtime YAML and `--replay_recording` command are described in the README.
+
 ## 4. Map localization
+
+Dynamic map files are optional and read only when their loading flag is enabled.
+An absent dynamic tile initializes an empty in-memory layer, including after
+unloading/revisiting. Static tiles and unreadable enabled dynamic files fail
+explicitly. A failed PCD read never marks a tile successfully loaded.
 
 Native sensor preprocessing feeds odometry in localization too. Each completed
 LIO update feeds local motion/pose-graph prediction; sensor timestamps throttle
@@ -242,6 +337,15 @@ The public onboard sections describe SSH X11 forwarding; detailed maintenance
 constraints are in `AGENTS.md`.
 
 ## 7. Map-save contract
+
+Point-cloud filtering shares one helper. Ordinary clouds retain PCL's filtering
+path; clouds whose grid would overflow PCL's signed 32-bit indices use sorted
+sparse 64-bit coordinate tuples and the same centroid calculation instead.
+This preserves leaf size while keeping memory proportional to input points,
+including fine loop-closure submaps and large map exports. Non-finite points are
+reported and excluded; invalid leaf sizes or coordinates outside the supported
+64-bit range fail explicitly. No filtering fallback changes estimator poses,
+calibration, or the requested spatial resolution.
 
 Offline mapping saves to `--map_path` at normal bag completion. Online mapping
 uses `/lightning/save_map` (`lightning/srv/SaveMap`) with `map_id`, relative to the

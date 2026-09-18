@@ -6,7 +6,7 @@
 #include <fstream>
 #include <numeric>
 
-#include <pcl/filters/voxel_grid.h>
+#include "utils/pointcloud_utils.h"
 
 #include "core/localization/lidar_loc/lidar_loc.h"
 
@@ -107,9 +107,7 @@ bool GlobalLocalization::SaveIndex(const std::string& directory,
         const auto t = pose.translation(); const auto q = pose.unit_quaternion();
         const std::array<double, 7> values{t.x(), t.y(), t.z(), q.x(), q.y(), q.z(), q.w()};
         for (double v : values) Write(out, v);
-        CloudPtr sampled(new PointCloudType);
-        pcl::VoxelGrid<PointType> voxel; voxel.setLeafSize(.5f, .5f, .5f);
-        voxel.setInputCloud(kf->GetCloud()); voxel.filter(*sampled);
+        CloudPtr sampled = VoxelGrid(kf->GetCloud(), .5f);
         const auto descriptor = Describe(sampled);
         for (float v : descriptor) Write(out, v);
     }
@@ -166,9 +164,7 @@ bool GlobalLocalization::Init(const std::string& config, const std::string& dire
 
 GlobalLocalization::Result GlobalLocalization::Search(const CloudPtr& scan) {
     Result result;
-    CloudPtr sampled(new PointCloudType);
-    pcl::VoxelGrid<PointType> voxel; voxel.setLeafSize(.5f, .5f, .5f);
-    voxel.setInputCloud(scan); voxel.filter(*sampled);
+    CloudPtr sampled = VoxelGrid(scan, .5f);
     if (sampled->size() < 50) return result;
     Place query; query.descriptor = Describe(sampled); Normalize(query);
     if (std::count(query.populated.begin(), query.populated.end(), true) < 6) return result;

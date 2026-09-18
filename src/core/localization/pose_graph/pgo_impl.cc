@@ -166,7 +166,8 @@ bool PGOImpl::AssignLidarOdomPoseIfNeeded(std::shared_ptr<PGOFrame> frame) {
             // lidarodom 不见得一定比 lidarloc 快。
             LOG(WARNING) << "PGOFrame (frame_id " << frame->frame_id_ << ") Interpolate on lidarOdom Failed!";
             LOG(WARNING) << "PGOFrame time: " << std::fixed << std::setprecision(18) << frame->timestamp_
-                         << ", latest lidarOdom time: " << lidar_odom_pose_queue_.back().timestamp_;
+                         << ", latest lidarOdom time: "
+                         << (lidar_odom_pose_queue_.empty() ? -1.0 : lidar_odom_pose_queue_.back().timestamp_);
             return false;
         }
     } else {

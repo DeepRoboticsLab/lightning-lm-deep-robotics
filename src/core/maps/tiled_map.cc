@@ -273,6 +273,16 @@ void TiledMap::AddDynamicCloud(CloudPtr cloud) {
     flag_first_dynamic_scan_ = false;
 }
 
+void TiledMap::LoadDynamicChunk(const std::shared_ptr<MapChunk>& chunk) {
+    if (options_.policy_ == DynamicCloudPolicy::PERSISTENT && options_.load_dyn_cloud_) {
+        chunk->LoadCloud(true);
+    } else {
+        chunk->cloud_.reset(new PointCloudType);
+        chunk->loaded_ = true;
+    }
+    dynamic_map_updated_ = true;
+}
+
 void TiledMap::LoadOnPose(const SE3& pose) {
     Vec2d p = pose.translation().head<2>();
     auto this_grid = Pos2Grid(p);
@@ -304,11 +314,11 @@ void TiledMap::LoadOnPose(const SE3& pose) {
                 auto new_chunk = std::make_shared<MapChunk>(
                     cp.second->id_, cp.first, options_.map_path_ + "/" + std::to_string(cp.second->id_) + "_dyn.pcd");
                 dynamic_chunks_.emplace(cp.first, new_chunk);
-                dynamic_map_updated_ = true;
+                LoadDynamicChunk(new_chunk);
             } else {
                 /// 如果该区块已经被卸载，那么重新读取该区块点云
                 if (!dyn_iter->second->loaded_) {
-                    dyn_iter->second->LoadCloud();
+                    LoadDynamicChunk(dyn_iter->second);
                 }
             }
         }
@@ -330,7 +340,7 @@ void TiledMap::LoadOnPose(const SE3& pose) {
 
             auto d = dynamic_chunks_.find(g);
             if (options_.policy_ == DynamicCloudPolicy::SHORT && d != dynamic_chunks_.end()) {
-                dynamic_chunks_[g]->cloud_ = nullptr;
+                d->second->Unload();
                 dynamic_map_updated_ = true;
             }
 
@@ -483,8 +493,7 @@ void TiledMap::UpdateDynamicCloud(CloudPtr cloud_world, bool remove_old) {
         if (iter != dynamic_chunks_.end()) {
             /// 该区块已经存在，则加入这个区块的点云
             if (!iter->second->loaded_) {
-                iter->second->LoadCloud();
-                continue;
+                LoadDynamicChunk(iter->second);
             }
 
             if (!remove_old && iter->second->cloud_->size() >= options_.max_pts_in_dyn_chunk_) {

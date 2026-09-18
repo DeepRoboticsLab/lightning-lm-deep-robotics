@@ -4,6 +4,7 @@
 #include "io/yaml_io.h"
 #include "core/system/loc_system.h"
 #include "core/localization/localization.h"
+#include "utils/console.h"
 
 DEFINE_string(config, "config/m20_pro.yaml", "Sensor configuration YAML (M20 Pro or Mid360)");
 DEFINE_string(map_path, "", "Map directory (localization defaults to system.map_path)");
@@ -16,7 +17,9 @@ int main(int argc, char** argv) {
     FLAGS_colorlogtostderr = true;
     FLAGS_stderrthreshold = google::INFO;
     google::ParseCommandLineFlags(&argc, &argv, true);
+    std::unique_ptr<lightning::console::Session> terminal;
     try {
+        terminal = std::make_unique<lightning::console::Session>("Localization", true);
         tbb::global_control parallelism(tbb::global_control::max_allowed_parallelism, 4);
         rclcpp::init(argc, argv);
         lightning::YAML_IO yaml(FLAGS_config);

@@ -18,12 +18,14 @@
 #include "common/eigen_types.h"
 #include "common/imu.h"
 #include "common/keyframe.h"
+#include "common/measure_group.h"
 
 namespace lightning {
 
 class LaserMapping;  //  lio 前端
 class LoopClosing;   // 回环检测
 class OnlineVisualization;
+class SlamRecorder;
 
 namespace ui {
 class PangolinWindow;
@@ -43,6 +45,7 @@ class SlamSystem {
 
         bool online_mode_ = true;  // 在线模式，在线模式下会起一些子线程来做异步处理
         bool with_rviz_ = false;
+        std::string recording_directory_;  // Empty disables internal recording.
 
         bool with_cc_ = true;               // 是否需要带交叉验证
         bool with_gridmap_ = true;          // 是否需要2D栅格
@@ -77,12 +80,15 @@ class SlamSystem {
 
     /// 实时模式下的spin
     void Spin();
+    void ProcessRecordedInput(const MeasureGroup& input);
+    bool FinishRecording();
 
    private:
     /// ros端保存地图的实现
     void SaveMap(const SaveMapService::Request::SharedPtr request, SaveMapService::Response::SharedPtr response);
 
     void ProcessBufferedLidar(bool quiet_sync = false);
+    void HandleLidarResult(bool updated);
     size_t lidar_messages_ = 0, imu_messages_ = 0;
     AsyncMessageProcess<std::function<void()>> sensor_queue_;
     Options options_;
@@ -93,6 +99,7 @@ class SlamSystem {
     std::string map_name_;  // 地图名
 
     std::shared_ptr<LaserMapping> lio_ = nullptr;       // lio 前端
+    std::unique_ptr<SlamRecorder> recorder_;
     std::shared_ptr<LoopClosing> lc_ = nullptr;         // 回环检测
     std::shared_ptr<ui::PangolinWindow> ui_ = nullptr;  // ui
     std::shared_ptr<g2p5::G2P5> g2p5_ = nullptr;        // 栅格地图

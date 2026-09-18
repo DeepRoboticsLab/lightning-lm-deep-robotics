@@ -8,11 +8,13 @@
 #include "core/lio/imu_processing.hpp"
 #include "ui/pangolin_window.h"
 #include "wrapper/ros_utils.h"
+#include "utils/console.h"
+#include "utils/pointcloud_utils.h"
 
 namespace lightning {
 
 NavState LaserMapping::GetIMUState() const {
-    if (p_imu_->IsIMUInited()) {
+    if (p_imu_->IsIMUInited() && !flg_first_scan_) {
         return kf_imu_.GetX();
     } else {
         NavState s;
@@ -155,9 +157,13 @@ void LaserMapping::ProcessIMU(const lightning::IMUPtr &imu) {
         imu_buffer_.clear();
     }
 
-    if (p_imu_->IsIMUInited()) {
+    if (p_imu_->IsIMUInited() && !flg_first_scan_) {
         /// 更新最新imu状态
-        kf_imu_.Predict(timestamp - last_timestamp_imu_, p_imu_->Q_, imu->angular_velocity, imu->linear_acceleration);
+        const double dt = timestamp - kf_imu_.GetX().timestamp_;
+        if (dt > 0) {
+            kf_imu_.Predict(dt, p_imu_->Q_, imu->angular_velocity, imu->linear_acceleration);
+            kf_imu_.SetTime(timestamp);
+        }
 
         // LOG(INFO) << "newest wrt lidar: " << timestamp - kf_.GetX().timestamp_;
 
@@ -178,15 +184,28 @@ void LaserMapping::ProcessIMU(const lightning::IMUPtr &imu) {
 
 bool LaserMapping::Run(bool quiet_sync) {
     if (!SyncPackages()) {
-        if (!quiet_sync) LOG(WARNING) << "sync package failed";
+        // Asynchronous inputs normally wait here for IMU coverage; this is not
+        // a sensor failure. Actual timestamp/queue failures have their own warnings.
+        if (!quiet_sync) LOG(INFO) << "Waiting for synchronized LiDAR/IMU input";
         return false;
     }
 
+    return RunSynchronized(measures_);
+}
+
+bool LaserMapping::RunSynchronized(const MeasureGroup& input) {
+    measures_ = input;
+    lidar_end_time_ = measures_.lidar_end_time_;
+    // Snapshot before ImuProcess sorts and deskews the shared cloud in place.
+    if (input_callback_) input_callback_(measures_);
+
     /// IMU process, kf prediction, undistortion
+    const bool imu_was_initialized = p_imu_->IsIMUInited();
     p_imu_->Process(measures_, kf_, scan_undistort_);
 
     if (scan_undistort_->empty() || (scan_undistort_ == nullptr)) {
-        LOG(WARNING) << "No point, skip this scan!";
+        if (imu_was_initialized) LOG(WARNING) << "No point, skip this scan!";
+        else LOG(INFO) << "Initializing IMU; waiting for the first deskewed scan";
         return false;
     }
 
@@ -204,6 +223,7 @@ bool LaserMapping::Run(bool quiet_sync) {
         first_lidar_time_ = measures_.lidar_end_time_;
         state_point_.timestamp_ = lidar_end_time_;
         flg_first_scan_ = false;
+        UpdateIMUPrediction();
         return true;
     }
 
@@ -234,8 +254,7 @@ bool LaserMapping::Run(bool quiet_sync) {
     flg_EKF_inited_ = (measures_.lidar_begin_time_ - first_lidar_time_) >= fasterlio::INIT_TIME;
 
     /// downsample
-    voxel_scan_.setInputCloud(scan_undistort_);
-    voxel_scan_.filter(*scan_down_body_);
+    scan_down_body_ = VoxelGrid(scan_undistort_, voxel_scan_.getLeafSize()[0]);
 
     int cur_pts = scan_down_body_->size();
     if (cur_pts < 5) {
@@ -246,10 +265,7 @@ bool LaserMapping::Run(bool quiet_sync) {
     if (cur_pts < (scan_undistort_->size() * 0.1)) {
         /// 降采样太狠了,有效点数不够，用
 
-        auto v = voxel_scan_;
-        v.setLeafSize(0.1, 0.1, 0.1);
-        v.setInputCloud(scan_undistort_);
-        v.filter(*scan_down_body_);
+        scan_down_body_ = VoxelGrid(scan_undistort_, 0.1f);
         cur_pts = scan_down_body_->size();
     }
 
@@ -292,6 +308,7 @@ bool LaserMapping::Run(bool quiet_sync) {
 
     LOG(INFO) << "[ mapping ]: In num: " << scan_undistort_->points.size() << " down " << cur_pts
               << " Map grid num: " << ivox_->NumValidGrids() << " effect num : " << effect_feat_num_;
+    console::Odometry(cur_pts, effect_feat_num_, state_point_.pos_.x(), state_point_.pos_.y(), state_point_.pos_.z());
 
     /// keyframes
     if (last_kf_ == nullptr) {
@@ -307,22 +324,28 @@ bool LaserMapping::Run(bool quiet_sync) {
         }
     }
 
-    /// 更新kf_for_imu
-    kf_imu_ = kf_;
-    if (!measures_.imu_.empty()) {
-        double t = measures_.imu_.back()->timestamp;
-        for (auto &imu : imu_buffer_) {
-            double dt = imu->timestamp - t;
-            kf_imu_.Predict(dt, p_imu_->Q_, imu->angular_velocity, imu->linear_acceleration);
-            t = imu->timestamp;
-        }
-    }
+    UpdateIMUPrediction();
 
     if (ui_) {
         ui_->UpdateScan(scan_undistort_, state_point_.GetPose());
     }
 
     return true;
+}
+
+void LaserMapping::UpdateIMUPrediction() {
+    // Seed prediction from an initialized scan state, including the first scan.
+    kf_imu_ = kf_;
+    // This pose is at scan end, which can lie between two IMU samples. Starting
+    // from the preceding IMU timestamp would integrate that partial span twice.
+    kf_imu_.SetTime(lidar_end_time_);
+    for (const auto &imu : imu_buffer_) {
+        const double dt = imu->timestamp - kf_imu_.GetX().timestamp_;
+        if (dt > 0) {
+            kf_imu_.Predict(dt, p_imu_->Q_, imu->angular_velocity, imu->linear_acceleration);
+            kf_imu_.SetTime(imu->timestamp);
+        }
+    }
 }
 
 void LaserMapping::MakeKF() {
@@ -340,6 +363,7 @@ void LaserMapping::MakeKF() {
     }
 
     kf->SetState(state_point_);
+    console::Keyframe();
 
     LOG(INFO) << "LIO: create kf " << kf->GetID() << ", state: " << state_point_.pos_.transpose()
               << ", kf opt pose: " << kf->GetOptPose().translation().transpose()
@@ -706,17 +730,13 @@ void LaserMapping::ObsModel(NavState &s, ESKF::CustomObservationModel &obs) {
 CloudPtr LaserMapping::GetGlobalMap(bool use_lio_pose, bool use_voxel, float res) {
     CloudPtr global_map(new PointCloudType);
 
-    pcl::VoxelGrid<PointType> voxel;
-    voxel.setLeafSize(res, res, res);
-
     for (auto &kf : all_keyframes_) {
         CloudPtr cloud = kf->GetCloud();
 
         CloudPtr cloud_filter(new PointCloudType);
 
         if (use_voxel) {
-            voxel.setInputCloud(cloud);
-            voxel.filter(*cloud_filter);
+            cloud_filter = VoxelGrid(cloud, res);
 
         } else {
             cloud_filter = cloud;
@@ -737,8 +757,7 @@ CloudPtr LaserMapping::GetGlobalMap(bool use_lio_pose, bool use_voxel, float res
 
     CloudPtr global_map_filtered(new PointCloudType);
     if (use_voxel) {
-        voxel.setInputCloud(global_map);
-        voxel.filter(*global_map_filtered);
+        global_map_filtered = VoxelGrid(global_map, res);
     } else {
         global_map_filtered = global_map;
     }

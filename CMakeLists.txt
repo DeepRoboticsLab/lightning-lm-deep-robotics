@@ -53,6 +53,7 @@ foreach (SRC_FILE ${SRC_FILES})
 endforeach ()
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+        "msg/SlamInput.msg"
         ${MY_SRV_FILES}
         ${MY_MSG_FILES}
         ${MY_ACTION_FILES}

@@ -32,7 +32,7 @@ struct MapChunk {
     void AddPoint(const PointType& pt);
 
     /// 加载地图
-    void LoadCloud();
+    void LoadCloud(bool optional = false);
 
     /// 卸载本区块
     void Unload();

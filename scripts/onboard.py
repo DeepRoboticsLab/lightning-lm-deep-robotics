@@ -126,6 +126,9 @@ def configure(args):
         sensor = args.config or ROOT / "config" / ("mid360.yaml" if args.platform == "agx" else "m20_pro.yaml")
         config = yaml.safe_load(Path(sensor).expanduser().read_text())
         config["system"]["with_ui"] = False
+        if args.config is None:
+            # Reduce onboard LiDAR correction work; keep recorded-data presets unchanged.
+            config["fasterlio"]["skip_lidar_num"] = 2
         if args.platform == "agx" and args.config is None:
             # Livox manual: IMU origin in LiDAR coordinates is the inverse translation.
             config["fasterlio"]["extrinsic_T"] = [-0.011, -0.02329, 0.04412]
@@ -460,12 +463,17 @@ def main():
     config.add_argument("--app-cpus")
     config.add_argument("--rviz-cpus")
     commands.add_parser("lidar", help="start the Livox driver unless it is already publishing")
-    commands.add_parser("slam", help="start live mapping with RViz outputs")
+    slam = commands.add_parser("slam", help="start live mapping with RViz outputs")
+    slam.add_argument("--record-bag", action="store_true",
+                      help="record synchronized SLAM inputs beside the session log for debug replay")
     loc = commands.add_parser("localize", help="localize against a saved tiled map")
     loc.add_argument("map", type=Path)
     loc.add_argument("--trajectory", type=Path, default=ROOT / "data/localization_onboard.tum")
     loc.add_argument("--global-init", action="store_true",
                      help="find the initial location using a map saved with a place index")
+    for application in (slam, loc):
+        application.add_argument("--console", choices=("auto", "plain", "verbose"), default="auto",
+                                 help="live terminal status, plain summaries, or full diagnostic output")
     save = commands.add_parser("save", help="save the running mapping session")
     save.add_argument("map_id")
     rviz = commands.add_parser("rviz", help="view the live scan/path, or a saved map, over SSH X11")
@@ -542,7 +550,9 @@ def main():
         if any(n in observed["nodes"] for n in ("lightning_slam", "lightning_localization")):
             raise ValueError("A Lightning-LM application is already running in this ROS domain. Stop it first.")
         command = ["ros2", "run", "lightning", "run_slam_online" if args.command == "slam" else "run_loc_online",
-                   "--config", profile["config"], "--rviz"]
+                   "--config", profile["config"], "--rviz", "--console=" + args.console]
+        if args.command == "slam" and args.record_bag:
+            command += ["--record_bag"]
         if args.command == "localize":
             if args.global_init:
                 command += ["--global_init"]

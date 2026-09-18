@@ -5,6 +5,8 @@
 #include "tiled_map_chunk.h"
 
 #include <pcl/io/pcd_io.h>
+#include <filesystem>
+#include <stdexcept>
 
 namespace lightning {
 
@@ -14,14 +16,18 @@ void MapChunk::AddPoint(const PointType& pt) {
         cloud_->reserve(50000);
     }
     cloud_->points.emplace_back(pt);
+    loaded_ = true;
 }
 
-void MapChunk::LoadCloud() {
-    if (cloud_ == nullptr) {
-        cloud_.reset(new PointCloudType);
+void MapChunk::LoadCloud(bool optional) {
+    CloudPtr cloud(new PointCloudType);
+    // Dynamic layers need not exist. Required tiles and corrupt existing files
+    // still fail explicitly instead of being marked successfully loaded.
+    if (!(optional && !std::filesystem::exists(filename_)) &&
+        pcl::io::loadPCDFile(filename_, *cloud) < 0) {
+        throw std::runtime_error("Cannot load map tile: " + filename_);
     }
-    pcl::io::loadPCDFile(filename_, *cloud_);
-
+    cloud_ = cloud;
     loaded_ = true;
 }
 

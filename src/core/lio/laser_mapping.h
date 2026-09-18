@@ -58,6 +58,10 @@ class LaserMapping {
     bool Init(const std::string &config_yaml);
 
     bool Run(bool quiet_sync = false);
+    // Internal debug replay bypasses sensor filtering/synchronization exactly once.
+    bool RunSynchronized(const MeasureGroup& input);
+    using InputCallback = std::function<void(const MeasureGroup&)>;
+    void SetInputCallback(InputCallback callback) { input_callback_ = std::move(callback); }
 
     // callbacks of lidar and imu
     /// 处理ROS2的点云
@@ -122,9 +126,11 @@ class LaserMapping {
 
     /// 创建关键帧
     void MakeKF();
+    void UpdateIMUPrediction();
 
    private:
     Options options_;
+    InputCallback input_callback_;
 
     /// modules
     IVoxType::Options ivox_options_;

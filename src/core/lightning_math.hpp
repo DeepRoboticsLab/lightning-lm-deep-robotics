@@ -534,6 +534,13 @@ inline SE3 XYZRPYToSE3(const PoseRPYD& pose) {
 template <typename T, typename C, typename FT, typename FP>
 inline bool PoseInterp(double query_time, C&& data, FT&& take_time_func, FP&& take_pose_func, SE3& result,
                        T& best_match, float time_th = 0.5, bool verbose = false) {
+    // An exact sample needs no interpolation, even at startup with one pose.
+    // Handle the first endpoint explicitly; the interval search below uses <.
+    if (!data.empty() && query_time == take_time_func(*data.begin())) {
+        best_match = *data.begin();
+        result = take_pose_func(best_match);
+        return true;
+    }
     if (data.size() <= 1) {
         if (verbose) {
             LOG(INFO) << "data size is too small for interp: " << data.size();

@@ -3,6 +3,7 @@
 //
 
 #include "core/system/loc_system.h"
+#include "utils/console.h"
 #include "core/localization/localization.h"
 #include "io/yaml_io.h"
 #include "wrapper/ros_utils.h"
@@ -48,6 +49,7 @@ bool LocSystem::Init(const std::string &yaml_path, const std::string &map_overri
 
     imu_sub_ = node_->create_subscription<sensor_msgs::msg::Imu>(
         imu_topic_, imu_qos, [this](sensor_msgs::msg::Imu::SharedPtr msg) {
+            console::ReceivedImu();
             IMUPtr imu = std::make_shared<IMU>();
             imu->timestamp = ToSec(msg->header.stamp);
             imu->linear_acceleration =
@@ -59,11 +61,13 @@ bool LocSystem::Init(const std::string &yaml_path, const std::string &map_overri
 
     cloud_sub_ = node_->create_subscription<sensor_msgs::msg::PointCloud2>(
         cloud_topic_, lidar_qos, [this](sensor_msgs::msg::PointCloud2::SharedPtr cloud) {
+            console::ReceivedLidar();
             sensor_queue_.AddMessage([this, cloud]() { ProcessLidar(cloud); }, cloud->data.size() + sizeof(*cloud) + 256);
         });
 
     livox_sub_ = node_->create_subscription<livox_ros_driver2::msg::CustomMsg>(
         livox_topic_, lidar_qos, [this](livox_ros_driver2::msg::CustomMsg ::SharedPtr cloud) {
+            console::ReceivedLidar();
             sensor_queue_.AddMessage([this, cloud]() { ProcessLidar(cloud); },
                                     cloud->points.size() * sizeof(cloud->points[0]) + sizeof(*cloud) + 128);
         });

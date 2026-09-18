@@ -47,6 +47,9 @@ void LoopClosing::Init(const std::string yaml_path) {
         YAML_IO yaml(yaml_path);
 
         options_.loop_kf_gap_ = yaml.GetValue<int>("loop_closing", "loop_kf_gap");
+        options_.loop_retry_kf_gap_ =
+            YAML::LoadFile(yaml_path)["loop_closing"]["loop_retry_kf_gap"].as<int>(5);
+        if (options_.loop_retry_kf_gap_ < 1) throw std::invalid_argument("loop_retry_kf_gap must be positive");
         options_.min_id_interval_ = yaml.GetValue<int>("loop_closing", "min_id_interval");
         options_.closest_id_th_ = yaml.GetValue<int>("loop_closing", "closest_id_th");
         options_.max_range_ = yaml.GetValue<double>("loop_closing", "max_range");
@@ -103,13 +106,11 @@ void LoopClosing::DetectLoopCandidates() {
     auto& kfs_mapping = all_keyframes_;
     Keyframe::Ptr check_first = nullptr;
 
-    if (last_loop_kf_ == nullptr) {
-        last_loop_kf_ = cur_kf_;
-        return;
-    }
-
     if (last_loop_kf_ && (cur_kf_->GetID() - last_loop_kf_->GetID()) <= options_.loop_kf_gap_) {
         LOG(INFO) << "skip because last loop kf: " << last_loop_kf_->GetID();
+        return;
+    }
+    if (last_attempt_kf_ && cur_kf_->GetID() - last_attempt_kf_->GetID() < options_.loop_retry_kf_gap_) {
         return;
     }
 
@@ -138,7 +139,7 @@ void LoopClosing::DetectLoopCandidates() {
     }
 
     if (!candidates_.empty()) {
-        last_loop_kf_ = cur_kf_;
+        last_attempt_kf_ = cur_kf_;
     }
 
     if (options_.verbose_ && !candidates_.empty()) {
@@ -317,19 +318,42 @@ void LoopClosing::PoseOptimization() {
     optimizer_->InitializeOptimization();
     optimizer_->SetVerbose(false);
 
+    std::vector<SE3> before_solve;
+    before_solve.reserve(kf_vert_.size());
+    for (const auto& vertex : kf_vert_) before_solve.push_back(vertex->Estimate());
     optimizer_->Optimize(20);
     /// remove outliers
     int cnt_outliers = 0;
+    bool rejected = false;
     for (auto& e : edge_loops_) {
+        if (e->Level() != 0) {
+            ++cnt_outliers;
+            continue;
+        }
         if (e->GetRobustKernel() == nullptr) {
             continue;
         }
 
-        if (e->Chi2() > e->GetRobustKernel()->Delta()) {
+        if (!std::isfinite(e->Chi2()) || e->Chi2() > e->GetRobustKernel()->Delta()) {
             e->SetLevel(1);
+            rejected = true;
             cnt_outliers++;
         } else {
             e->SetRobustKernel(nullptr);
+        }
+    }
+
+    // Publish/export a solution that no longer contains the rejected constraints.
+    if (rejected) {
+        // Avoid retaining the free graph's gauge shift from a rejected solve.
+        for (size_t i = 0; i < kf_vert_.size(); ++i) kf_vert_[i]->SetEstimate(before_solve[i]);
+        optimizer_->InitializeOptimization();
+        optimizer_->Optimize(20);
+    }
+    for (const auto& e : edge_loops_) {
+        if (e->Level() == 0 && e->GetVertex(1)->GetId() == cur_kf_->GetID()) {
+            last_loop_kf_ = cur_kf_;
+            break;
         }
     }
 

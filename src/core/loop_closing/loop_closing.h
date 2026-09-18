@@ -26,10 +26,11 @@ class LoopClosing {
         bool online_mode_ = false;  // 切换离线-在线模式
 
         int loop_kf_gap_ = 20;       // 每隔多少个关键帧检查一次
+        int loop_retry_kf_gap_ = 5;  // Bounded retry after unsuccessful registration
         int min_id_interval_ = 20;   // 被检查的关键帧ID间隔
         int closest_id_th_ = 50;     // 历史关键帧与当前帧的ID间隔
         double max_range_ = 30.0;    // 候选帧的最大距离
-        double ndt_score_th_ = 1.0;  // ndt位姿分值
+        double ndt_score_th_ = 0.6;  // ndt位姿分值
 
         /// 图优化权重
         double motion_trans_noise_ = 0.1;               // 位移权重
@@ -76,6 +77,7 @@ class LoopClosing {
 
     Keyframe::Ptr last_kf_ = nullptr;
     Keyframe::Ptr last_loop_kf_ = nullptr;
+    Keyframe::Ptr last_attempt_kf_ = nullptr;
     Keyframe::Ptr cur_kf_ = nullptr;
     std::vector<Keyframe::Ptr> all_keyframes_;
     std::vector<LoopCandidate> candidates_;

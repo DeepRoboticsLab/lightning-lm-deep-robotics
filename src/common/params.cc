@@ -10,7 +10,7 @@ namespace lightning {
 
 Params::Params(const std::string& yaml_path) {
     yaml_path_ = yaml_path;
-    std::cout << "Loading params from " << yaml_path << std::endl;
+    LOG(INFO) << "Loading params from " << yaml_path;
     auto yaml = YAML::LoadFile(yaml_path);
 
     Vec3d lidar_T_wrt_IMU;
@@ -86,8 +86,8 @@ Params::Params(const std::string& yaml_path) {
         ext_qrpy_ = Quatd(R_lidar_imu_);
 
     } catch (const YAML::Exception& e) {
-        std::cerr << "YAML parsing error at line " << e.mark.line + 1 << ", column " << e.mark.column + 1 << ": "
-                  << e.what() << std::endl;
+        LOG(ERROR) << "YAML parsing error at line " << e.mark.line + 1 << ", column " << e.mark.column + 1 << ": "
+                   << e.what();
         // 退出程序
         std::exit(EXIT_FAILURE);
     }

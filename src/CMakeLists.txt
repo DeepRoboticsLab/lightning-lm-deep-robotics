@@ -32,6 +32,7 @@ add_library(${PROJECT_NAME}.libs SHARED
         core/localization/localization.cpp
 
         utils/timer.cc
+        utils/console.cc
         utils/pointcloud_utils.cc
 
         ui/pangolin_window.cc
@@ -44,6 +45,7 @@ add_library(${PROJECT_NAME}.libs SHARED
         core/system/loc_system.cc
 
         wrapper/bag_io.cc
+        wrapper/slam_recorder.cc
         wrapper/online_visualization.cc
 )
 

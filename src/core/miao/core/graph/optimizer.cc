@@ -103,8 +103,13 @@ void Optimizer::InitFromLast(int level) {
         }
     }
 
-    for (const auto &e : new_edges_) {
-        if (e->Level() == level) {
+    // Levels may change after an earlier solve (for example, loop rejection).
+    // Keep the incremental vertex/block allocation, but refresh edge activity.
+    // BuildSystem clears all allocated Hessian blocks before accumulating these
+    // edges; retaining an inactive edge's block does not retain its contribution.
+    active_edges_.clear();
+    for (const auto &e : edges_) {
+        if ((level < 0 || e->Level() == level) && !e->AllVerticesFixed()) {
             active_edges_.emplace_back(e.get());
         }
     }
