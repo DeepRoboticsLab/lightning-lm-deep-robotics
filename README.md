@@ -1,5 +1,7 @@
 # Lightning-LM
 
+[![Discord](https://img.shields.io/badge/-Discord-5865F2?style=flat&logo=Discord&logoColor=white)](https://discord.gg/gdM9mQutC8)
+
 ![Seven 3D reconstructions](doc/images/seven-datasets-overview.png)
 
 Watch the tutorial on [YouTube](https://youtu.be/1S8X03tm3-8?si=2YWOS35JFoj5kiHp)
